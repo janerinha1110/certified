@@ -20,6 +20,14 @@ const handleQuizResponseSubmission = async (userData) => {
     { name, email, phone, certified_user_skill_id }
   );
   
+  console.log('🔍 Raw service result:', JSON.stringify(result, null, 2));
+  
+  // Check if result has data and if it's not empty
+  if (!result.data || Object.keys(result.data).length === 0) {
+    console.error('❌ Service returned empty data object');
+    throw new Error('Service returned empty data - check service logs');
+  }
+  
   // Format response to match the exact structure you want
   const formattedResponse = {
     success: true,
