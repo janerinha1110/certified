@@ -22,7 +22,7 @@ const options = {
         description: 'Development server'
       },
       {
-        url: 'https://your-production-domain.com',
+        url: 'https://certifiedwhatsapp.vercel.app',
         description: 'Production server'
       }
     ],
