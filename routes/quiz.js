@@ -21,7 +21,7 @@ const handleQuizResponseSubmission = async (userData) => {
   );
   
   // Format response to match the exact structure you want
-  return {
+  const formattedResponse = {
     success: true,
     message: "Quiz response submitted successfully",
     data: {
@@ -39,6 +39,9 @@ const handleQuizResponseSubmission = async (userData) => {
       quiz_attempt: result.data.quiz_attempt || {}
     }
   };
+  
+  console.log('📤 Formatted response:', JSON.stringify(formattedResponse, null, 2));
+  return formattedResponse;
 };
 
 /**
