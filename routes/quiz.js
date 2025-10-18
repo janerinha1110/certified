@@ -616,8 +616,8 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  * @swagger
  * /api/auto_submit_quiz:
  *   post:
- *     summary: Automatically submit quiz response using session data
- *     description: Automatically triggers quiz submission using data from database. No input required - fetches user and session data automatically.
+ *     summary: Automatically submit quiz response using phone and subject
+ *     description: Automatically triggers quiz submission using phone and subject to find the session. Fetches user and session data from database automatically.
  *     tags: [Quiz]
  *     requestBody:
  *       required: true
@@ -626,13 +626,17 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - session_id
+ *               - phone
+ *               - subject
  *             properties:
- *               session_id:
+ *               phone:
  *                 type: string
- *                 format: uuid
- *                 description: Session ID to auto-submit
- *                 example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *                 description: User's phone number to find the session
+ *                 example: "918007880283"
+ *               subject:
+ *                 type: string
+ *                 description: Subject/course name to find the session
+ *                 example: "Java"
  *     responses:
  *       200:
  *         description: Quiz auto-submitted successfully
@@ -695,7 +699,7 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *                   example: "failed"
  *                 message:
  *                   type: string
- *                   example: "Session ID is required"
+ *                   example: "Phone and subject are required"
  *       404:
  *         description: Session not found
  *         content:
@@ -708,7 +712,7 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *                   example: "failed"
  *                 message:
  *                   type: string
- *                   example: "Session not found"
+ *                   example: "No active session found for this phone and subject"
  *       500:
  *         description: Internal server error
  *         content:
@@ -725,31 +729,33 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  */
 router.post('/auto_submit_quiz', async (req, res) => {
   try {
-    const { session_id } = req.body;
+    const { phone, subject } = req.body;
     
-    if (!session_id) {
+    if (!phone || !subject) {
       return res.status(400).json({
         result: "failed",
-        message: "Session ID is required"
+        message: "Phone and subject are required"
       });
     }
     
-    console.log('🤖 Auto-submitting quiz for session:', session_id);
+    console.log('🤖 Auto-submitting quiz for phone:', phone, 'subject:', subject);
     
-    // Get session and user data from database
+    // Get session and user data from database using phone and subject
     const sessionQuery = `
-      SELECT s.*, u.name, u.email, u.phone
+      SELECT s.*, u.name, u.email, u.phone, u.subject
       FROM sessions s
       JOIN users u ON s.user_id = u.id
-      WHERE s.id = $1
+      WHERE u.phone = $1 AND u.subject = $2
+      ORDER BY s.created_at DESC
+      LIMIT 1
     `;
     
-    const sessionResult = await query(sessionQuery, [session_id]);
+    const sessionResult = await query(sessionQuery, [phone, subject]);
     
     if (sessionResult.rows.length === 0) {
       return res.status(404).json({
         result: "failed",
-        message: "Session not found"
+        message: "No active session found for this phone and subject"
       });
     }
     
@@ -757,6 +763,8 @@ router.post('/auto_submit_quiz', async (req, res) => {
     console.log('📊 Found session data:', {
       session_id: sessionData.id,
       user_name: sessionData.name,
+      user_phone: sessionData.phone,
+      user_subject: sessionData.subject,
       certified_user_id: sessionData.certified_user_id
     });
     
@@ -781,7 +789,8 @@ router.post('/auto_submit_quiz', async (req, res) => {
           id: sessionData.user_id,
           name: sessionData.name,
           email: sessionData.email,
-          phone: sessionData.phone
+          phone: sessionData.phone,
+          subject: sessionData.subject
         },
         session: {
           id: sessionData.id,
