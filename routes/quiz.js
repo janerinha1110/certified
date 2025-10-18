@@ -639,7 +639,7 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *                 example: "Java"
  *     responses:
  *       200:
- *         description: Quiz auto-submitted successfully
+ *         description: Quiz auto-submitted successfully - Returns same response as /api/submit_quiz_response
  *         content:
  *           application/json:
  *             schema:
@@ -650,43 +650,10 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *                   example: "success"
  *                 message:
  *                   type: string
- *                   example: "Quiz auto-submitted successfully"
+ *                   example: "Quiz response submitted successfully"
  *                 data:
  *                   type: object
- *                   properties:
- *                     user:
- *                       type: object
- *                       properties:
- *                         id:
- *                           type: string
- *                           format: uuid
- *                         name:
- *                           type: string
- *                         email:
- *                           type: string
- *                         phone:
- *                           type: string
- *                     session:
- *                       type: object
- *                       properties:
- *                         id:
- *                           type: string
- *                           format: uuid
- *                         certified_user_id:
- *                           type: integer
- *                         quiz_completed:
- *                           type: boolean
- *                     quiz_attempt_object:
- *                       type: array
- *                       items:
- *                         type: object
- *                         properties:
- *                           quiz_id:
- *                             type: string
- *                           user_answer:
- *                             type: string
- *                           is_correct:
- *                             type: integer
+ *                   description: "Same response structure as /api/submit_quiz_response"
  *       400:
  *         description: Validation error or bad request
  *         content:
@@ -781,25 +748,8 @@ router.post('/auto_submit_quiz', async (req, res) => {
     // Call the quiz response service
     const result = await quizResponseService.submitQuizResponse(userData);
     
-    res.status(200).json({
-      result: "success",
-      message: "Quiz auto-submitted successfully",
-      data: {
-        user: {
-          id: sessionData.user_id,
-          name: sessionData.name,
-          email: sessionData.email,
-          phone: sessionData.phone,
-          subject: sessionData.subject
-        },
-        session: {
-          id: sessionData.id,
-          certified_user_id: sessionData.certified_user_id,
-          quiz_completed: true
-        },
-        quiz_attempt_object: result.quiz_attempt_object || []
-      }
-    });
+    // Return the exact same response as /api/submit_quiz_response
+    res.status(200).json(result);
     
   } catch (error) {
     console.error('Error in auto_submit_quiz endpoint:', error);
