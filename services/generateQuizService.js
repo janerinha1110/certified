@@ -35,7 +35,10 @@ class GenerateQuizService {
 
       const response = await axios.post(url, data, {
         headers,
-        timeout: 15000 // 15 second timeout
+        timeout: 15000, // 15 second timeout
+        httpsAgent: new (require('https').Agent)({
+          rejectUnauthorized: false // Ignore SSL certificate errors
+        })
       });
 
       console.log('✅ Generate quiz API response received');

@@ -51,7 +51,10 @@ class CertifiedApiService {
           ...headers,
           'cookie': cookies
         },
-        timeout: 10000 // 10 second timeout
+        timeout: 10000, // 10 second timeout
+        httpsAgent: new (require('https').Agent)({
+          rejectUnauthorized: false // Ignore SSL certificate errors
+        })
       });
 
       return response.data;

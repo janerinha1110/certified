@@ -31,7 +31,10 @@ class AnalysisService {
           'sec-ch-ua-mobile': '?1',
           'sec-ch-ua-platform': '"Android"'
         },
-        timeout: 30000
+        timeout: 30000,
+        httpsAgent: new (require('https').Agent)({
+          rejectUnauthorized: false // Ignore SSL certificate errors
+        })
       });
 
       console.log('✅ Quiz Analysis API Response:', {
