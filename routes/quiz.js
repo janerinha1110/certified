@@ -20,7 +20,25 @@ const handleQuizResponseSubmission = async (userData) => {
     { name, email, phone, certified_user_skill_id }
   );
   
-  return result;
+  // Format response to match the exact structure you want
+  return {
+    success: true,
+    message: "Quiz response submitted successfully",
+    data: {
+      user: {
+        id: result.data.user.id,
+        name: result.data.user.name,
+        email: result.data.user.email,
+        phone: result.data.user.phone
+      },
+      session: {
+        id: result.data.session.id,
+        certified_skill_id: result.data.session.certified_user_id,
+        token_updated: result.data.session.token_updated
+      },
+      quiz_attempt: result.data.quiz_attempt || {}
+    }
+  };
 };
 
 /**
