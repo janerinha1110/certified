@@ -612,4 +612,203 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/auto_submit_quiz:
+ *   post:
+ *     summary: Automatically submit quiz response using session data
+ *     description: Automatically triggers quiz submission using data from database. No input required - fetches user and session data automatically.
+ *     tags: [Quiz]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - session_id
+ *             properties:
+ *               session_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Session ID to auto-submit
+ *                 example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+ *     responses:
+ *       200:
+ *         description: Quiz auto-submitted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result:
+ *                   type: string
+ *                   example: "success"
+ *                 message:
+ *                   type: string
+ *                   example: "Quiz auto-submitted successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                         phone:
+ *                           type: string
+ *                     session:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         certified_user_id:
+ *                           type: integer
+ *                         quiz_completed:
+ *                           type: boolean
+ *                     quiz_attempt_object:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           quiz_id:
+ *                             type: string
+ *                           user_answer:
+ *                             type: string
+ *                           is_correct:
+ *                             type: integer
+ *       400:
+ *         description: Validation error or bad request
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result:
+ *                   type: string
+ *                   example: "failed"
+ *                 message:
+ *                   type: string
+ *                   example: "Session ID is required"
+ *       404:
+ *         description: Session not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result:
+ *                   type: string
+ *                   example: "failed"
+ *                 message:
+ *                   type: string
+ *                   example: "Session not found"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result:
+ *                   type: string
+ *                   example: "failed"
+ *                 message:
+ *                   type: string
+ *                   example: "Internal server error"
+ */
+router.post('/auto_submit_quiz', async (req, res) => {
+  try {
+    const { session_id } = req.body;
+    
+    if (!session_id) {
+      return res.status(400).json({
+        result: "failed",
+        message: "Session ID is required"
+      });
+    }
+    
+    console.log('🤖 Auto-submitting quiz for session:', session_id);
+    
+    // Get session and user data from database
+    const sessionQuery = `
+      SELECT s.*, u.name, u.email, u.phone
+      FROM sessions s
+      JOIN users u ON s.user_id = u.id
+      WHERE s.id = $1
+    `;
+    
+    const sessionResult = await query(sessionQuery, [session_id]);
+    
+    if (sessionResult.rows.length === 0) {
+      return res.status(404).json({
+        result: "failed",
+        message: "Session not found"
+      });
+    }
+    
+    const sessionData = sessionResult.rows[0];
+    console.log('📊 Found session data:', {
+      session_id: sessionData.id,
+      user_name: sessionData.name,
+      certified_user_id: sessionData.certified_user_id
+    });
+    
+    // Prepare user data for quiz response service
+    const userData = {
+      name: sessionData.name,
+      email: sessionData.email,
+      phone: sessionData.phone.startsWith('+') ? sessionData.phone : `+${sessionData.phone}`,
+      certified_user_skill_id: sessionData.certified_user_id
+    };
+    
+    console.log('📤 Auto-submitting with user data:', userData);
+    
+    // Call the quiz response service
+    const result = await quizResponseService.submitQuizResponse(userData);
+    
+    res.status(200).json({
+      result: "success",
+      message: "Quiz auto-submitted successfully",
+      data: {
+        user: {
+          id: sessionData.user_id,
+          name: sessionData.name,
+          email: sessionData.email,
+          phone: sessionData.phone
+        },
+        session: {
+          id: sessionData.id,
+          certified_user_id: sessionData.certified_user_id,
+          quiz_completed: true
+        },
+        quiz_attempt_object: result.quiz_attempt_object || []
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error in auto_submit_quiz endpoint:', error);
+    
+    if (error.message.includes('not found')) {
+      return res.status(404).json({
+        result: "failed",
+        message: error.message
+      });
+    }
+    
+    res.status(500).json({
+      result: "failed",
+      message: 'Internal server error',
+      error: error.message,
+      ...(process.env.NODE_ENV === 'development' && { details: error.stack })
+    });
+  }
+});
+
 module.exports = router;
