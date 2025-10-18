@@ -8,6 +8,21 @@ const quizResponseService = require('../services/quizResponseService');
 const { query } = require('../database');
 const { body, validationResult } = require('express-validator');
 
+// Shared function for quiz response submission logic
+const handleQuizResponseSubmission = async (userData) => {
+  const { name, email, phone, certified_user_skill_id } = userData;
+  
+  console.log('📝 Processing quiz response submission...');
+  console.log('📤 Request data:', { name, email, phone, certified_user_skill_id });
+  
+  // Submit quiz response
+  const result = await quizResponseService.submitQuizResponse(
+    { name, email, phone, certified_user_skill_id }
+  );
+  
+  return result;
+};
+
 /**
  * @swagger
  * components:
@@ -583,13 +598,10 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
   try {
     const { name, email, phone, certified_user_skill_id } = req.body;
     
-    console.log('📝 Processing quiz response submission...');
-    console.log('📤 Request data:', { name, email, phone, certified_user_skill_id });
-    
-    // Submit quiz response
-    const result = await quizResponseService.submitQuizResponse(
-      { name, email, phone, certified_user_skill_id }
-    );
+    // Use shared function for quiz response submission
+    const result = await handleQuizResponseSubmission({
+      name, email, phone, certified_user_skill_id
+    });
     
     res.status(200).json(result);
     
@@ -745,8 +757,8 @@ router.post('/auto_submit_quiz', async (req, res) => {
     
     console.log('📤 Auto-submitting with user data:', userData);
     
-    // Call the quiz response service
-    const result = await quizResponseService.submitQuizResponse(userData);
+    // Use shared function for quiz response submission (encapsulates /api/submit_quiz_response logic)
+    const result = await handleQuizResponseSubmission(userData);
     
     // Return the exact same response as /api/submit_quiz_response
     res.status(200).json(result);
