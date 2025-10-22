@@ -6,17 +6,17 @@ class UserService {
     const { name, email, phone, subject } = userData;
     
     try {
-      // First, check if user already exists
+      // First, check if user already exists with same email AND subject combination
       const existingUserQuery = `
         SELECT id, name, email, phone, subject, created_at 
         FROM users 
-        WHERE email = $1
+        WHERE email = $1 AND subject = $2
       `;
       
-      const existingUserResult = await query(existingUserQuery, [email]);
+      const existingUserResult = await query(existingUserQuery, [email, subject]);
       
       if (existingUserResult.rows.length > 0) {
-        console.log('User already exists with email:', email);
+        console.log('User already exists with email:', email, 'and subject:', subject);
         return existingUserResult.rows[0];
       }
       
