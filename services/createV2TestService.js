@@ -9,6 +9,7 @@ class CreateV2TestService {
     try {
       console.log('🎯 Calling create_v2_test API...');
       console.log('📤 Request data:', { certifiedUserSkillId });
+      console.log('🔑 Using token:', certifiedToken ? 'Token present' : 'No token');
 
       const requestData = {
         items: [
@@ -16,12 +17,14 @@ class CreateV2TestService {
             product_slug: "certificate_type_3",
             product_quantity: 1,
             entity_type: "skill",
-            entity_id: certifiedUserSkillId
+            entity_id: parseInt(certifiedUserSkillId)
           }
         ],
         utm_source: "",
         scholarship_type: ""
       };
+
+      console.log('📦 Final request payload:', JSON.stringify(requestData, null, 2));
 
       const response = await axios.post(this.baseURL, requestData, {
         headers: {
