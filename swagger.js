@@ -129,6 +129,11 @@ const options = {
               format: 'date-time',
               description: 'Timestamp when the session was created',
               example: '2024-01-01T00:00:00.000Z'
+            },
+            order_id: {
+              type: 'integer',
+              description: 'Order ID returned from create_v2_test API',
+              example: 739568
             }
           }
         },

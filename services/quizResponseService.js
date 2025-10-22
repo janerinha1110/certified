@@ -3,6 +3,7 @@ const continueApiService = require('./continueApi');
 const saveUserResponseService = require('./saveUserResponseService');
 const certificateClaimService = require('./certificateClaimService');
 const analysisService = require('./analysisService');
+const createV2TestService = require('./createV2TestService');
 
 class QuizResponseService {
   async submitQuizResponse(userData) {
@@ -172,6 +173,21 @@ class QuizResponseService {
       
       console.log('✅ Certificate claim API completed');
       
+      // Now call create_v2_test API
+      console.log('🎯 Calling create_v2_test API...');
+      
+      const createV2TestResult = await createV2TestService.createV2Test(
+        continueResult.token,
+        certifiedUserSkillId
+      );
+      
+      if (!createV2TestResult.success) {
+        console.error('Create V2 Test failed:', createV2TestResult);
+        // Don't throw error, just log it
+      }
+      
+      console.log('✅ Create V2 Test API completed');
+      
       // Now call quiz analysis API
       console.log('📊 Calling quiz analysis API...');
       
@@ -189,12 +205,13 @@ class QuizResponseService {
       
       // Update session as quiz completed and analysis generated (only if analysis was successful)
       const analysisGenerated = analysisResult.success;
+      const orderId = createV2TestResult.success && createV2TestResult.data ? createV2TestResult.data.id : null;
       const updateQuizCompletedQuery = `
         UPDATE sessions 
-        SET quiz_completed = true, quiz_analysis_generated = $1, quiz_attempt_object = $2
-        WHERE id = $3
+        SET quiz_completed = true, quiz_analysis_generated = $1, quiz_attempt_object = $2, order_id = $3
+        WHERE id = $4
       `;
-      await query(updateQuizCompletedQuery, [analysisGenerated, JSON.stringify(quizAttemptArray), session.id]);
+      await query(updateQuizCompletedQuery, [analysisGenerated, JSON.stringify(quizAttemptArray), orderId, session.id]);
       
       return {
         result: "success",
@@ -211,7 +228,8 @@ class QuizResponseService {
             certified_user_id: session.certified_user_id,
             token_updated: true,
             quiz_completed: true,
-            quiz_analysis_generated: analysisGenerated
+            quiz_analysis_generated: analysisGenerated,
+            order_id: orderId
           },
           quiz_attempt: quizAttemptArray,
           quiz_results: {
@@ -222,6 +240,7 @@ class QuizResponseService {
           },
           save_user_response: saveResponseResult,
           certificate_claim: certificateResult,
+          create_v2_test: createV2TestResult,
           quiz_analysis: analysisResult
         }
       };

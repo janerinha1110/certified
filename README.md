@@ -131,6 +131,7 @@ The project includes a `vercel.json` file with:
 - `quiz_completed` (Boolean)
 - `quiz_analysis_generated` (Boolean)
 - `quiz_attempt_object` (JSONB)
+- `order_id` (Integer) - Order ID from create_v2_test API
 - `created_at` (Timestamp)
 
 ### Questions Table
