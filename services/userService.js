@@ -20,6 +20,33 @@ class UserService {
         return existingUserResult.rows[0];
       }
       
+      // Check if user exists with same email but different subject
+      const userWithSameEmailQuery = `
+        SELECT id, name, email, phone, subject, created_at 
+        FROM users 
+        WHERE email = $1
+      `;
+      
+      const userWithSameEmailResult = await query(userWithSameEmailQuery, [email]);
+      
+      if (userWithSameEmailResult.rows.length > 0) {
+        // User exists with same email but different subject - update the subject
+        console.log('User exists with email:', email, 'but different subject. Updating subject to:', subject);
+        
+        const updateUserQuery = `
+          UPDATE users 
+          SET subject = $1, updated_at = NOW()
+          WHERE email = $2
+          RETURNING id, name, email, phone, subject, created_at
+        `;
+        
+        const updateResult = await query(updateUserQuery, [subject, email]);
+        const updatedUser = updateResult.rows[0];
+        
+        console.log('User subject updated for email:', email, 'to subject:', subject);
+        return updatedUser;
+      }
+      
       // Insert new user into users table
       const userQuery = `
         INSERT INTO users(name, email, phone, subject) 

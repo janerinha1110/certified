@@ -44,7 +44,9 @@ const handleQuizResponseSubmission = async (userData) => {
         certified_skill_id: result.data.session.certified_user_id,
         token_updated: result.data.session.token_updated
       },
-      quiz_attempt: result.data.quiz_attempt || {}
+      quiz_attempt: result.data.quiz_attempt || {},
+      quiz_results: result.data.quiz_results || {},
+      score: result.data.quiz_results?.score || 0
     }
   };
   
@@ -686,15 +688,63 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *             schema:
  *               type: object
  *               properties:
- *                 result:
- *                   type: string
- *                   example: "success"
+ *                 success:
+ *                   type: boolean
+ *                   example: true
  *                 message:
  *                   type: string
  *                   example: "Quiz response submitted successfully"
  *                 data:
  *                   type: object
- *                   description: "Same response structure as /api/submit_quiz_response"
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                         phone:
+ *                           type: string
+ *                     session:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         certified_skill_id:
+ *                           type: integer
+ *                         token_updated:
+ *                           type: boolean
+ *                     quiz_attempt:
+ *                       type: array
+ *                       description: Array of quiz questions with user answers
+ *                     quiz_results:
+ *                       type: object
+ *                       properties:
+ *                         score:
+ *                           type: integer
+ *                           description: Quiz score out of 100
+ *                           example: 80
+ *                         correct_answers:
+ *                           type: integer
+ *                           description: Number of correct answers
+ *                           example: 8
+ *                         total_questions:
+ *                           type: integer
+ *                           description: Total number of questions
+ *                           example: 10
+ *                         completion_time_seconds:
+ *                           type: integer
+ *                           description: Time taken to complete quiz in seconds
+ *                           example: 300
+ *                     score:
+ *                       type: integer
+ *                       description: Quiz score out of 100 (direct access)
+ *                       example: 80
  *       400:
  *         description: Validation error or bad request
  *         content:
