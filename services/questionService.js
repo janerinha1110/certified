@@ -10,7 +10,7 @@ class QuestionService {
       for (let i = 0; i < questions.length; i++) {
         const questionData = questions[i];
         // Format the question with options
-        const formattedQuestion = this.formatQuestion(questionData);
+        const formattedQuestion = this.formatQuestion(questionData, i + 1, questions.length);
         
         const questionQuery = `
           INSERT INTO questions(
@@ -50,15 +50,18 @@ class QuestionService {
     }
   }
 
-  formatQuestion(questionData) {
+  formatQuestion(questionData, questionNo, totalQuestions) {
     // Format the question with options as requested
     const { question, option_a, option_b, option_c, option_d } = questionData;
     
-    return `${question}
+    return `Q.no(${questionNo}/${totalQuestions}) ${question}
 
 A. ${option_a}
+
 B. ${option_b}
+
 C. ${option_c}
+
 D. ${option_d}`;
   }
 

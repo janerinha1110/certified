@@ -63,52 +63,87 @@ class GenerateQuizService {
 
       const questionnaire = quizData.data.quiz_question_answer.questionaire;
       
-      // Extract 5 easy questions (q_id 1-5)
+      // Helper function to filter questions without code snippets
+      const filterQuestionsWithoutCodeSnippets = (questionList, targetCount) => {
+        const filteredQuestions = questionList.filter(q => {
+          // Check if code_snippet is empty - must be null, undefined, empty string, or only whitespace
+          const isEmptyCodeSnippet = !q.code_snippet || q.code_snippet.trim() === '';
+          const hasCodeSnippet = !isEmptyCodeSnippet;
+          
+          if (hasCodeSnippet) {
+            console.log(`⚠️  Skipping question ${q.q_id} - has code snippet: "${q.code_snippet.substring(0, 50)}..."`);
+          }
+          return isEmptyCodeSnippet; // Only include questions with empty code_snippet
+        });
+        
+        // If we don't have enough questions, try to get more from the available pool
+        if (filteredQuestions.length < targetCount) {
+          console.log(`⚠️  Only found ${filteredQuestions.length} questions without code snippets, need ${targetCount}`);
+          // Take all available questions without code snippets
+          return filteredQuestions.slice(0, targetCount);
+        }
+        
+        return filteredQuestions.slice(0, targetCount);
+      };
+      
+      // Extract 5 easy questions (q_id 1-5) - skip those with code snippets
       if (questionnaire.easy && Array.isArray(questionnaire.easy)) {
         const easyQIds = [1, 2, 3, 4, 5];
         const easyQuestions = questionnaire.easy.filter(q => easyQIds.includes(q.q_id));
-        easyQuestions.forEach((q, index) => {
+        const filteredEasyQuestions = filterQuestionsWithoutCodeSnippets(easyQuestions, 5);
+        
+        filteredEasyQuestions.forEach((q, index) => {
           questions.push({
             ...q,
             question_type: 'Easy',
             unique_quiz_id: `${q.q_id}` // Use just the q_id number
           });
         });
-        console.log(`📋 Extracted ${easyQuestions.length} easy questions with q_ids: ${easyQuestions.map(q => q.q_id).join(', ')}`);
+        console.log(`📋 Extracted ${filteredEasyQuestions.length} easy questions with q_ids: ${filteredEasyQuestions.map(q => q.q_id).join(', ')}`);
       }
 
-      // Extract 3 medium questions (q_id 11-13)
+      // Extract 3 medium questions (q_id 11-13) - skip those with code snippets
       if (questionnaire.medium && Array.isArray(questionnaire.medium)) {
         const mediumQIds = [11, 12, 13];
         const mediumQuestions = questionnaire.medium.filter(q => mediumQIds.includes(q.q_id));
-        mediumQuestions.forEach((q, index) => {
+        const filteredMediumQuestions = filterQuestionsWithoutCodeSnippets(mediumQuestions, 3);
+        
+        filteredMediumQuestions.forEach((q, index) => {
           questions.push({
             ...q,
             question_type: 'Medium',
             unique_quiz_id: `${q.q_id}` // Use just the q_id number
           });
         });
-        console.log(`📋 Extracted ${mediumQuestions.length} medium questions with q_ids: ${mediumQuestions.map(q => q.q_id).join(', ')}`);
+        console.log(`📋 Extracted ${filteredMediumQuestions.length} medium questions with q_ids: ${filteredMediumQuestions.map(q => q.q_id).join(', ')}`);
       }
 
-      // Extract 2 hard questions (q_id 17-18)
+      // Extract 2 hard questions (q_id 17-18) - skip those with code snippets
       if (questionnaire.hard && Array.isArray(questionnaire.hard)) {
         const hardQIds = [17, 18];
         const hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
-        hardQuestions.forEach((q, index) => {
+        const filteredHardQuestions = filterQuestionsWithoutCodeSnippets(hardQuestions, 2);
+        
+        filteredHardQuestions.forEach((q, index) => {
           questions.push({
             ...q,
             question_type: 'Hard',
             unique_quiz_id: `${q.q_id}` // Use just the q_id number
           });
         });
-        console.log(`📋 Extracted ${hardQuestions.length} hard questions with q_ids: ${hardQuestions.map(q => q.q_id).join(', ')}`);
+        console.log(`📋 Extracted ${filteredHardQuestions.length} hard questions with q_ids: ${filteredHardQuestions.map(q => q.q_id).join(', ')}`);
       }
 
       const easyCount = questions.filter(q => q.question_type === 'Easy').length;
       const mediumCount = questions.filter(q => q.question_type === 'Medium').length;
       const hardCount = questions.filter(q => q.question_type === 'Hard').length;
       console.log(`📋 Extracted ${questions.length} questions (${easyCount} Easy, ${mediumCount} Medium, ${hardCount} Hard)`);
+      
+      // If we don't have exactly 10 questions, log a warning
+      if (questions.length !== 10) {
+        console.log(`⚠️  Warning: Expected 10 questions but got ${questions.length}. Some questions may have been skipped due to code snippets.`);
+      }
+      
       return questions;
     } catch (error) {
       console.error('❌ Error extracting questions:', error.message);
