@@ -64,8 +64,8 @@ class GenerateQuizService {
       const questionnaire = quizData.data.quiz_question_answer.questionaire;
       
       // Helper function to filter questions without code snippets
-      const filterQuestionsWithoutCodeSnippets = (questionList, targetCount) => {
-        const filteredQuestions = questionList.filter(q => {
+      const filterQuestionsWithoutCodeSnippets = (questionList) => {
+        return questionList.filter(q => {
           // Check if code_snippet is empty - must be null, undefined, empty string, or only whitespace
           const isEmptyCodeSnippet = !q.code_snippet || q.code_snippet.trim() === '';
           const hasCodeSnippet = !isEmptyCodeSnippet;
@@ -75,73 +75,98 @@ class GenerateQuizService {
           }
           return isEmptyCodeSnippet; // Only include questions with empty code_snippet
         });
-        
-        // If we don't have enough questions, try to get more from the available pool
-        if (filteredQuestions.length < targetCount) {
-          console.log(`⚠️  Only found ${filteredQuestions.length} questions without code snippets, need ${targetCount}`);
-          // Take all available questions without code snippets
-          return filteredQuestions.slice(0, targetCount);
-        }
-        
-        return filteredQuestions.slice(0, targetCount);
       };
       
-      // Extract 5 easy questions (q_id 1-5) - skip those with code snippets
+      // Collect all available questions without code snippets
+      let allEasyQuestions = [];
+      let allMediumQuestions = [];
+      let allHardQuestions = [];
+      
+      // Extract easy questions (q_id 1-5)
       if (questionnaire.easy && Array.isArray(questionnaire.easy)) {
         const easyQIds = [1, 2, 3, 4, 5];
         const easyQuestions = questionnaire.easy.filter(q => easyQIds.includes(q.q_id));
-        const filteredEasyQuestions = filterQuestionsWithoutCodeSnippets(easyQuestions, 5);
-        
-        filteredEasyQuestions.forEach((q, index) => {
-          questions.push({
-            ...q,
-            question_type: 'Easy',
-            unique_quiz_id: `${q.q_id}` // Use just the q_id number
-          });
-        });
-        console.log(`📋 Extracted ${filteredEasyQuestions.length} easy questions with q_ids: ${filteredEasyQuestions.map(q => q.q_id).join(', ')}`);
+        allEasyQuestions = filterQuestionsWithoutCodeSnippets(easyQuestions);
+        console.log(`📋 Found ${allEasyQuestions.length} easy questions without code snippets`);
       }
 
-      // Extract 3 medium questions (q_id 11-13) - skip those with code snippets
+      // Extract medium questions (q_id 11-13)
       if (questionnaire.medium && Array.isArray(questionnaire.medium)) {
         const mediumQIds = [11, 12, 13];
         const mediumQuestions = questionnaire.medium.filter(q => mediumQIds.includes(q.q_id));
-        const filteredMediumQuestions = filterQuestionsWithoutCodeSnippets(mediumQuestions, 3);
-        
-        filteredMediumQuestions.forEach((q, index) => {
-          questions.push({
-            ...q,
-            question_type: 'Medium',
-            unique_quiz_id: `${q.q_id}` // Use just the q_id number
-          });
-        });
-        console.log(`📋 Extracted ${filteredMediumQuestions.length} medium questions with q_ids: ${filteredMediumQuestions.map(q => q.q_id).join(', ')}`);
+        allMediumQuestions = filterQuestionsWithoutCodeSnippets(mediumQuestions);
+        console.log(`📋 Found ${allMediumQuestions.length} medium questions without code snippets`);
       }
 
-      // Extract 2 hard questions (q_id 17-18) - skip those with code snippets
+      // Extract hard questions (q_id 17-18)
       if (questionnaire.hard && Array.isArray(questionnaire.hard)) {
         const hardQIds = [17, 18];
         const hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
-        const filteredHardQuestions = filterQuestionsWithoutCodeSnippets(hardQuestions, 2);
-        
-        filteredHardQuestions.forEach((q, index) => {
-          questions.push({
-            ...q,
-            question_type: 'Hard',
-            unique_quiz_id: `${q.q_id}` // Use just the q_id number
-          });
-        });
-        console.log(`📋 Extracted ${filteredHardQuestions.length} hard questions with q_ids: ${filteredHardQuestions.map(q => q.q_id).join(', ')}`);
+        allHardQuestions = filterQuestionsWithoutCodeSnippets(hardQuestions);
+        console.log(`📋 Found ${allHardQuestions.length} hard questions without code snippets`);
       }
 
-      const easyCount = questions.filter(q => q.question_type === 'Easy').length;
-      const mediumCount = questions.filter(q => q.question_type === 'Medium').length;
-      const hardCount = questions.filter(q => q.question_type === 'Hard').length;
-      console.log(`📋 Extracted ${questions.length} questions (${easyCount} Easy, ${mediumCount} Medium, ${hardCount} Hard)`);
+      // Dynamic distribution to ensure exactly 10 questions
+      const targetTotal = 10;
+      let easyCount = Math.min(5, allEasyQuestions.length);
+      let mediumCount = Math.min(3, allMediumQuestions.length);
+      let hardCount = Math.min(2, allHardQuestions.length);
       
-      // If we don't have exactly 10 questions, log a warning
-      if (questions.length !== 10) {
-        console.log(`⚠️  Warning: Expected 10 questions but got ${questions.length}. Some questions may have been skipped due to code snippets.`);
+      let currentTotal = easyCount + mediumCount + hardCount;
+      
+      // If we don't have enough questions, redistribute from available pools
+      if (currentTotal < targetTotal) {
+        console.log(`⚠️  Need ${targetTotal - currentTotal} more questions. Redistributing...`);
+        
+        // First, try to fill from easy questions
+        while (currentTotal < targetTotal && easyCount < allEasyQuestions.length) {
+          easyCount++;
+          currentTotal++;
+        }
+        
+        // Then, try to fill from medium questions
+        while (currentTotal < targetTotal && mediumCount < allMediumQuestions.length) {
+          mediumCount++;
+          currentTotal++;
+        }
+        
+        // Finally, try to fill from hard questions
+        while (currentTotal < targetTotal && hardCount < allHardQuestions.length) {
+          hardCount++;
+          currentTotal++;
+        }
+      }
+      
+      // Add questions to the final array
+      allEasyQuestions.slice(0, easyCount).forEach((q, index) => {
+        questions.push({
+          ...q,
+          question_type: 'Easy',
+          unique_quiz_id: `${q.q_id}`
+        });
+      });
+      
+      allMediumQuestions.slice(0, mediumCount).forEach((q, index) => {
+        questions.push({
+          ...q,
+          question_type: 'Medium',
+          unique_quiz_id: `${q.q_id}`
+        });
+      });
+      
+      allHardQuestions.slice(0, hardCount).forEach((q, index) => {
+        questions.push({
+          ...q,
+          question_type: 'Hard',
+          unique_quiz_id: `${q.q_id}`
+        });
+      });
+
+      console.log(`📋 Final distribution: ${easyCount} Easy, ${mediumCount} Medium, ${hardCount} Hard = ${questions.length} total questions`);
+      
+      // If we still don't have exactly 10 questions, log a warning
+      if (questions.length !== targetTotal) {
+        console.log(`⚠️  Warning: Could only get ${questions.length} questions without code snippets (target: ${targetTotal})`);
       }
       
       return questions;

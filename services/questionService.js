@@ -54,7 +54,7 @@ class QuestionService {
     // Format the question with options as requested
     const { question, option_a, option_b, option_c, option_d } = questionData;
     
-    return `Q.no(${questionNo}/${totalQuestions}) ${question}
+    return `Q. ${questionNo} of ${totalQuestions} ${question}
 
 A. ${option_a}
 
