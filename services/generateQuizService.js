@@ -63,21 +63,25 @@ class GenerateQuizService {
 
       const questionnaire = quizData.data.quiz_question_answer.questionaire;
       
-      // Helper function to filter questions without code snippets
-      const filterQuestionsWithoutCodeSnippets = (questionList) => {
-        return questionList.filter(q => {
-          // Check if code_snippet is empty - must be null, undefined, empty string, or only whitespace
-          const isEmptyCodeSnippet = !q.code_snippet || q.code_snippet.trim() === '';
-          const hasCodeSnippet = !isEmptyCodeSnippet;
+      // Helper function to process all questions (including those with code snippets)
+      const processAllQuestions = (questionList) => {
+        return questionList.map(q => {
+          // Check if code_snippet exists and has content
+          const hasCodeSnippet = q.code_snippet && q.code_snippet.trim() !== '';
           
           if (hasCodeSnippet) {
-            console.log(`⚠️  Skipping question ${q.q_id} - has code snippet: "${q.code_snippet.substring(0, 50)}..."`);
+            console.log(`📝 Question ${q.q_id} includes code snippet: "${q.code_snippet.substring(0, 50)}..."`);
+            // Add code snippet to the question text
+            q.formatted_question = `${q.question}\n\n\`\`\`\n${q.code_snippet}\n\`\`\``;
+          } else {
+            q.formatted_question = q.question;
           }
-          return isEmptyCodeSnippet; // Only include questions with empty code_snippet
+          
+          return q;
         });
       };
       
-      // Collect all available questions without code snippets
+      // Collect all available questions (including those with code snippets)
       let allEasyQuestions = [];
       let allMediumQuestions = [];
       let allHardQuestions = [];
@@ -86,24 +90,24 @@ class GenerateQuizService {
       if (questionnaire.easy && Array.isArray(questionnaire.easy)) {
         const easyQIds = [1, 2, 3, 4, 5];
         const easyQuestions = questionnaire.easy.filter(q => easyQIds.includes(q.q_id));
-        allEasyQuestions = filterQuestionsWithoutCodeSnippets(easyQuestions);
-        console.log(`📋 Found ${allEasyQuestions.length} easy questions without code snippets`);
+        allEasyQuestions = processAllQuestions(easyQuestions);
+        console.log(`📋 Found ${allEasyQuestions.length} easy questions (including those with code snippets)`);
       }
 
       // Extract medium questions (q_id 11-13)
       if (questionnaire.medium && Array.isArray(questionnaire.medium)) {
         const mediumQIds = [11, 12, 13];
         const mediumQuestions = questionnaire.medium.filter(q => mediumQIds.includes(q.q_id));
-        allMediumQuestions = filterQuestionsWithoutCodeSnippets(mediumQuestions);
-        console.log(`📋 Found ${allMediumQuestions.length} medium questions without code snippets`);
+        allMediumQuestions = processAllQuestions(mediumQuestions);
+        console.log(`📋 Found ${allMediumQuestions.length} medium questions (including those with code snippets)`);
       }
 
       // Extract hard questions (q_id 17-18)
       if (questionnaire.hard && Array.isArray(questionnaire.hard)) {
         const hardQIds = [17, 18];
         const hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
-        allHardQuestions = filterQuestionsWithoutCodeSnippets(hardQuestions);
-        console.log(`📋 Found ${allHardQuestions.length} hard questions without code snippets`);
+        allHardQuestions = processAllQuestions(hardQuestions);
+        console.log(`📋 Found ${allHardQuestions.length} hard questions (including those with code snippets)`);
       }
 
       // Dynamic distribution to ensure exactly 10 questions
@@ -166,7 +170,7 @@ class GenerateQuizService {
       
       // If we still don't have exactly 10 questions, log a warning
       if (questions.length !== targetTotal) {
-        console.log(`⚠️  Warning: Could only get ${questions.length} questions without code snippets (target: ${targetTotal})`);
+        console.log(`⚠️  Warning: Could only get ${questions.length} questions (target: ${targetTotal})`);
       }
       
       return questions;

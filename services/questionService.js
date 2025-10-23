@@ -52,9 +52,12 @@ class QuestionService {
 
   formatQuestion(questionData, questionNo, totalQuestions) {
     // Format the question with options as requested
-    const { question, option_a, option_b, option_c, option_d } = questionData;
+    const { formatted_question, option_a, option_b, option_c, option_d } = questionData;
     
-    return `Q. ${questionNo} of ${totalQuestions} ${question}
+    // Use formatted_question if available (includes code snippets), otherwise fallback to question
+    const questionText = formatted_question || questionData.question;
+    
+    return `Q. ${questionNo} of ${totalQuestions} ${questionText}
 
 A. ${option_a}
 
