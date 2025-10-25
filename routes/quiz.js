@@ -28,9 +28,13 @@ const handleQuizResponseSubmission = async (userData) => {
     throw new Error('Service returned empty data - check service logs');
   }
   
+  // Get the score to determine success level
+  const score = result.data.quiz_results?.score || 0;
+  const successValue = score > 60 ? "true_high" : "true_low";
+  
   // Format response to match the exact structure you want
   const formattedResponse = {
-    success: true,
+    success: successValue,
     message: "Quiz response submitted successfully",
     data: {
       user: {
@@ -46,7 +50,7 @@ const handleQuizResponseSubmission = async (userData) => {
       },
       quiz_attempt: result.data.quiz_attempt || {},
       quiz_results: result.data.quiz_results || {},
-      score: result.data.quiz_results?.score || 0
+      score: score
     }
   };
   
@@ -689,8 +693,10 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *               type: object
  *               properties:
  *                 success:
- *                   type: boolean
- *                   example: true
+ *                   type: string
+ *                   enum: ["true_high", "true_low"]
+ *                   example: "true_high"
+ *                   description: "true_high if score > 60, true_low if score <= 60"
  *                 message:
  *                   type: string
  *                   example: "Quiz response submitted successfully"
