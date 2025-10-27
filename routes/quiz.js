@@ -46,7 +46,8 @@ const handleQuizResponseSubmission = async (userData) => {
       session: {
         id: result.data.session.id,
         certified_skill_id: result.data.session.certified_user_id,
-        token_updated: result.data.session.token_updated
+        token_updated: result.data.session.token_updated,
+        order_id: result.data.session.order_id
       },
       quiz_attempt: result.data.quiz_attempt || {},
       quiz_results: result.data.quiz_results || {},
@@ -725,6 +726,10 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *                           type: integer
  *                         token_updated:
  *                           type: boolean
+ *                         order_id:
+ *                           type: integer
+ *                           description: Order ID generated from create_v2_test API
+ *                           example: 739568
  *                     quiz_attempt:
  *                       type: array
  *                       description: Array of quiz questions with user answers
