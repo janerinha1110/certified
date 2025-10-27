@@ -57,7 +57,7 @@ class QuestionService {
     // Use formatted_question if available (includes code snippets), otherwise fallback to question
     const questionText = formatted_question || questionData.question;
     
-    return `*Q. ${questionNo} of ${totalQuestions}* : ${questionText}
+    return `*Question ${questionNo} / ${totalQuestions}* : ${questionText}
 
 A. ${option_a}
 
