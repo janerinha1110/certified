@@ -57,7 +57,14 @@ class QuestionService {
     // Use formatted_question if available (includes code snippets), otherwise fallback to question
     const questionText = formatted_question || questionData.question;
     
-    return `*Question ${questionNo} / ${totalQuestions}* : ${questionText}
+    // Generate progress emojis - green squares for answered, grey squares for pending
+    const progressEmojis = '🟩'.repeat(questionNo - 1) + '🔳'.repeat(totalQuestions - questionNo + 1);
+    
+    return `*Question ${questionNo} / ${totalQuestions}*
+
+${progressEmojis}
+
+${questionText}
 
 A. ${option_a}
 
