@@ -58,7 +58,9 @@ class QuestionService {
     const questionText = formatted_question || questionData.question;
     
     // Generate progress emojis - green squares for answered, grey squares for pending
-    const progressEmojis = '🟩'.repeat(questionNo - 1) + '🔳'.repeat(totalQuestions - questionNo + 1);
+    // For question 1: 🟩🔳🔳🔳🔳🔳🔳🔳🔳🔳 (1 green, 9 grey)
+    // For question 2: 🟩🟩🔳🔳🔳🔳🔳🔳🔳🔳 (2 green, 8 grey)
+    const progressEmojis = '🟩'.repeat(questionNo) + '🔳'.repeat(totalQuestions - questionNo);
     
     return `*Question ${questionNo} / ${totalQuestions}*
 
