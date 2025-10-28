@@ -66,7 +66,7 @@ class QuestionService {
 
 ${progressEmojis}
 
-${questionText}
+🧠 ${questionText}
 
 A) ${option_a}
 
