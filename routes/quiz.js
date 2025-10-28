@@ -30,7 +30,17 @@ const handleQuizResponseSubmission = async (userData) => {
   
   // Get the score to determine success level
   const score = result.data.quiz_results?.score || 0;
-  const successValue = score > 60 ? "true_high" : "true_low";
+  // Categorize score per new rules:
+  // 0-40 => true_low, 50-60 => true_pass, 70-100 => true_high
+  // For scores outside these bands (41-49, 61-69), default to true_low unless specified otherwise
+  let successValue = 'true_low';
+  if (score >= 70 && score <= 100) {
+    successValue = 'true_high';
+  } else if (score >= 50 && score <= 60) {
+    successValue = 'true_pass';
+  } else if (score >= 0 && score <= 40) {
+    successValue = 'true_low';
+  }
   
   // Format response to match the exact structure you want
   const formattedResponse = {
