@@ -68,13 +68,13 @@ ${progressEmojis}
 
 ${questionText}
 
-A. ${option_a}
+A) ${option_a}
 
-B. ${option_b}
+B) ${option_b}
 
-C. ${option_c}
+C) ${option_c}
 
-D. ${option_d}`;
+D) ${option_d}`;
   }
 
   async getQuestionsBySession(sessionId) {
