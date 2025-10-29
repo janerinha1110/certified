@@ -53,7 +53,7 @@ app.get('/api-docs', (req, res) => {
 <head>
   <meta charset="UTF-8">
   <title>Certified InWhatsApp API Documentation</title>
-  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.17.4/swagger-ui.min.css" />
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui.css" />
   <style>
     html {
       box-sizing: border-box;
@@ -68,28 +68,60 @@ app.get('/api-docs', (req, res) => {
       background: #fafafa;
     }
     .swagger-ui .topbar { display: none; }
+    #loading {
+      text-align: center;
+      padding: 50px;
+      font-family: sans-serif;
+    }
   </style>
 </head>
 <body>
+  <div id="loading">Loading Swagger UI...</div>
   <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5.17.4/swagger-ui-bundle.min.js"></script>
-  <script src="https://unpkg.com/swagger-ui-dist@5.17.4/swagger-ui-standalone-preset.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui-standalone-preset.js"></script>
   <script>
-    window.onload = function() {
-      const ui = SwaggerUIBundle({
-        url: '${req.protocol}://${req.get('host')}/api-docs/swagger.json',
-        dom_id: '#swagger-ui',
-        deepLinking: true,
-        presets: [
-          SwaggerUIBundle.presets.apis,
-          SwaggerUIStandalonePreset
-        ],
-        plugins: [
-          SwaggerUIBundle.plugins.DownloadUrl
-        ],
-        layout: "StandaloneLayout"
-      });
-    };
+    console.log('Script loaded, checking SwaggerUIBundle:', typeof SwaggerUIBundle);
+    console.log('Checking SwaggerUIStandalonePreset:', typeof SwaggerUIStandalonePreset);
+    
+    function initSwagger() {
+      console.log('initSwagger called, SwaggerUIBundle defined:', typeof SwaggerUIBundle);
+      
+      if (typeof SwaggerUIBundle !== 'undefined' && typeof SwaggerUIStandalonePreset !== 'undefined') {
+        try {
+          document.getElementById('loading').style.display = 'none';
+          
+          const ui = SwaggerUIBundle({
+            url: '${req.protocol}://${req.get('host')}/api-docs/swagger.json',
+            dom_id: '#swagger-ui',
+            deepLinking: true,
+            presets: [
+              SwaggerUIBundle.presets.apis,
+              SwaggerUIStandalonePreset
+            ],
+            plugins: [
+              SwaggerUIBundle.plugins.DownloadUrl
+            ],
+            layout: "StandaloneLayout"
+          });
+          
+          console.log('Swagger UI initialized successfully');
+        } catch (error) {
+          console.error('Error initializing Swagger UI:', error);
+          document.getElementById('loading').innerHTML = '<h2>Error loading API documentation. Please refresh the page.</h2><p>' + error.message + '</p>';
+        }
+      } else {
+        console.log('SwaggerUIBundle not ready, retrying...');
+        setTimeout(initSwagger, 100);
+      }
+    }
+    
+    // Start initialization
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initSwagger);
+    } else {
+      initSwagger();
+    }
   </script>
 </body>
 </html>`;
