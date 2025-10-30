@@ -174,7 +174,9 @@ D) ${option_d}`;
         question_no: nextQuestion.question_no,
         current_question_no: currentQuestion.question_no,
         total_questions: 10,
-        scenario: (nextQuestion.question_no === 6 || nextQuestion.question_no === 9) ? (nextQuestion.scenario || '') : ''
+        scenario: (nextQuestion.question_no === 6 || nextQuestion.question_no === 9)
+          ? (nextQuestion.scenario && String(nextQuestion.scenario).trim() !== '' ? nextQuestion.scenario : null)
+          : null
       };
       
     } catch (error) {
