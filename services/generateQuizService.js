@@ -129,22 +129,58 @@ class GenerateQuizService {
           unique_quiz_id: `${q.q_id}`
         });
       });
-      
-      allMediumQuestions.slice(0, mediumCount).forEach((q, index) => {
-        questions.push({
-          ...q,
-          question_type: 'Medium',
-          unique_quiz_id: `${q.q_id}`
+
+      // Medium: ensure first selected (Q6) has scenario if possible
+      if (mediumCount > 0) {
+        const hasScenario = (q) => (q.scenario_title && q.scenario_title.trim() !== '') || (q.text_context && q.text_context.trim() !== '');
+        const mediumWithScenarioIndex = allMediumQuestions.findIndex(hasScenario);
+        const mediumSelected = [];
+        if (mediumWithScenarioIndex !== -1) {
+          // Put the one with scenario first
+          mediumSelected.push(allMediumQuestions[mediumWithScenarioIndex]);
+          // Fill remaining from others excluding the chosen one
+          for (let i = 0; i < allMediumQuestions.length && mediumSelected.length < mediumCount; i++) {
+            if (i === mediumWithScenarioIndex) continue;
+            mediumSelected.push(allMediumQuestions[i]);
+          }
+        } else {
+          // No scenario present, fallback to first N
+          mediumSelected.push(...allMediumQuestions.slice(0, mediumCount));
+        }
+        mediumSelected.forEach((q) => {
+          questions.push({
+            ...q,
+            question_type: 'Medium',
+            unique_quiz_id: `${q.q_id}`
+          });
         });
-      });
-      
-      allHardQuestions.slice(0, hardCount).forEach((q, index) => {
-        questions.push({
-          ...q,
-          question_type: 'Hard',
-          unique_quiz_id: `${q.q_id}`
+      }
+
+      // Hard: ensure first selected (Q9) has scenario if possible
+      if (hardCount > 0) {
+        const hasScenario = (q) => (q.scenario_title && q.scenario_title.trim() !== '') || (q.text_context && q.text_context.trim() !== '');
+        const hardWithScenarioIndex = allHardQuestions.findIndex(hasScenario);
+        const hardSelected = [];
+        if (hardWithScenarioIndex !== -1) {
+          // Put the one with scenario first
+          hardSelected.push(allHardQuestions[hardWithScenarioIndex]);
+          // Fill remaining from others excluding the chosen one
+          for (let i = 0; i < allHardQuestions.length && hardSelected.length < hardCount; i++) {
+            if (i === hardWithScenarioIndex) continue;
+            hardSelected.push(allHardQuestions[i]);
+          }
+        } else {
+          // No scenario present, fallback to first N
+          hardSelected.push(...allHardQuestions.slice(0, hardCount));
+        }
+        hardSelected.forEach((q) => {
+          questions.push({
+            ...q,
+            question_type: 'Hard',
+            unique_quiz_id: `${q.q_id}`
+          });
         });
-      });
+      }
 
       console.log(`📋 Final distribution (ordered): ${easyCount} Easy (1-5), ${mediumCount} Medium (6-8), ${hardCount} Hard (9-10) = ${questions.length} total questions`);
       
