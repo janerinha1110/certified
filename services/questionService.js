@@ -176,7 +176,10 @@ D) ${option_d}`;
         total_questions: 10,
         scenario: (nextQuestion.question_no === 6 || nextQuestion.question_no === 9)
           ? (nextQuestion.scenario && String(nextQuestion.scenario).trim() !== '' ? nextQuestion.scenario : null)
-          : null
+          : null,
+        has_scenario: (nextQuestion.question_no === 6 || nextQuestion.question_no === 9)
+          ? !!(nextQuestion.scenario && String(nextQuestion.scenario).trim() !== '')
+          : false
       };
       
     } catch (error) {
