@@ -30,14 +30,11 @@ class QuestionService {
         
         // Build scenario only for question 6 (first Medium) and 9 (first Hard)
         let scenarioValue = null;
-        const scenarioTitle = questionData.scenario_title || questionData.scenarioTitle || null;
         const textContext = questionData.text_context || questionData.textContext || null;
         const isScenarioPosition = (i + 1 === 6) || (i + 1 === 9);
-        if (isScenarioPosition && (scenarioTitle || textContext)) {
-          // Compose as: title on first line, then text context on next line
-          const titlePart = scenarioTitle ? String(scenarioTitle) : '';
-          const contextPart = textContext ? String(textContext) : '';
-          scenarioValue = [titlePart, contextPart].filter(Boolean).join('\n');
+        if (isScenarioPosition && textContext) {
+          // Store only text_context
+          scenarioValue = String(textContext);
         }
 
         const result = await query(questionQuery, [
