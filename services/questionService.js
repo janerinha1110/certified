@@ -146,7 +146,7 @@ D) ${option_d}`;
       
       // Get the next question in order
       const nextQuestionQuery = `
-        SELECT id, question_no, question, answer, correct_answer, answered
+        SELECT id, question_no, question, answer, correct_answer, answered, scenario
         FROM questions 
         WHERE session_id = $1 AND question_no = $2
         ORDER BY question_no ASC
@@ -176,7 +176,8 @@ D) ${option_d}`;
         question_id: nextQuestion.id,
         question_no: nextQuestion.question_no,
         current_question_no: currentQuestion.question_no,
-        total_questions: 10
+        total_questions: 10,
+        scenario: (nextQuestion.question_no === 6 || nextQuestion.question_no === 9) ? (nextQuestion.scenario || '') : ''
       };
       
     } catch (error) {
