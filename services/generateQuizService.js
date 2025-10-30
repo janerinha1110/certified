@@ -110,35 +110,15 @@ class GenerateQuizService {
         console.log(`📋 Found ${allHardQuestions.length} hard questions (including those with code snippets)`);
       }
 
-      // Dynamic distribution to ensure exactly 10 questions
+      // Enforce exact distribution and order: 1-5 Easy, 6-8 Medium, 9-10 Hard
       const targetTotal = 10;
-      let easyCount = Math.min(5, allEasyQuestions.length);
-      let mediumCount = Math.min(3, allMediumQuestions.length);
-      let hardCount = Math.min(2, allHardQuestions.length);
+      const easyCount = Math.min(5, allEasyQuestions.length);
+      const mediumCount = Math.min(3, allMediumQuestions.length);
+      const hardCount = Math.min(2, allHardQuestions.length);
       
-      let currentTotal = easyCount + mediumCount + hardCount;
-      
-      // If we don't have enough questions, redistribute from available pools
-      if (currentTotal < targetTotal) {
-        console.log(`⚠️  Need ${targetTotal - currentTotal} more questions. Redistributing...`);
-        
-        // First, try to fill from easy questions
-        while (currentTotal < targetTotal && easyCount < allEasyQuestions.length) {
-          easyCount++;
-          currentTotal++;
-        }
-        
-        // Then, try to fill from medium questions
-        while (currentTotal < targetTotal && mediumCount < allMediumQuestions.length) {
-          mediumCount++;
-          currentTotal++;
-        }
-        
-        // Finally, try to fill from hard questions
-        while (currentTotal < targetTotal && hardCount < allHardQuestions.length) {
-          hardCount++;
-          currentTotal++;
-        }
+      const totalPlanned = easyCount + mediumCount + hardCount;
+      if (totalPlanned !== targetTotal) {
+        console.log(`⚠️  Planned distribution is ${totalPlanned} (Easy ${easyCount}, Medium ${mediumCount}, Hard ${hardCount}). Some categories may have insufficient questions.`);
       }
       
       // Add questions to the final array
@@ -166,7 +146,7 @@ class GenerateQuizService {
         });
       });
 
-      console.log(`📋 Final distribution: ${easyCount} Easy, ${mediumCount} Medium, ${hardCount} Hard = ${questions.length} total questions`);
+      console.log(`📋 Final distribution (ordered): ${easyCount} Easy (1-5), ${mediumCount} Medium (6-8), ${hardCount} Hard (9-10) = ${questions.length} total questions`);
       
       // If we still don't have exactly 10 questions, log a warning
       if (questions.length !== targetTotal) {

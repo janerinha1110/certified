@@ -21,12 +21,25 @@ class QuestionService {
             correct_answer, 
             answered,
             question_no,
-            quiz_id
+            quiz_id,
+            scenario
           ) 
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          RETURNING id, session_id, user_id, question, answer, correct_answer, answered, created_at, question_no, quiz_id
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          RETURNING id, session_id, user_id, question, answer, correct_answer, answered, created_at, question_no, quiz_id, scenario
         `;
         
+        // Build scenario only for question 6 (first Medium) and 9 (first Hard)
+        let scenarioValue = null;
+        const scenarioTitle = questionData.scenario_title || questionData.scenarioTitle || null;
+        const textContext = questionData.text_context || questionData.textContext || null;
+        const isScenarioPosition = (i + 1 === 6) || (i + 1 === 9);
+        if (isScenarioPosition && (scenarioTitle || textContext)) {
+          // Compose as: title on first line, then text context on next line
+          const titlePart = scenarioTitle ? String(scenarioTitle) : '';
+          const contextPart = textContext ? String(textContext) : '';
+          scenarioValue = [titlePart, contextPart].filter(Boolean).join('\n');
+        }
+
         const result = await query(questionQuery, [
           sessionId,
           userId,
@@ -35,7 +48,8 @@ class QuestionService {
           questionData.correct_answer,
           false, // answered starts as false
           i + 1, // question number (1-based)
-          questionData.unique_quiz_id || questionData.q_id || null // unique quiz_id or fallback to q_id
+          questionData.unique_quiz_id || questionData.q_id || null, // unique quiz_id or fallback to q_id
+          scenarioValue
         ]);
         
         createdQuestions.push(result.rows[0]);
