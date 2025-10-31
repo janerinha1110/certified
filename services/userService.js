@@ -65,19 +65,27 @@ class UserService {
     }
   }
 
-  async createSession(userId, certifiedUserId, certifiedToken, certifiedTokenExpir) {
+  async createSession(userId, certifiedUserId, certifiedToken, certifiedTokenExpir, subject) {
     try {
+      // Ensure subject column exists on sessions (idempotent for Postgres)
+      try {
+        await query('ALTER TABLE sessions ADD COLUMN IF NOT EXISTS subject TEXT');
+      } catch (e) {
+        // Non-fatal: continue if cannot alter (e.g. permissions). We'll still insert without subject if column missing.
+      }
+
       const sessionQuery = `
-        INSERT INTO sessions(user_id, certified_user_id, certified_token, certified_token_expires_at)
-        VALUES ($1, $2, $3, $4)
-        RETURNING id, user_id, certified_user_id, certified_token, certified_token_expires_at, created_at
+        INSERT INTO sessions(user_id, certified_user_id, certified_token, certified_token_expires_at, subject)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at
       `;
       
       const sessionResult = await query(sessionQuery, [
         userId, 
         certifiedUserId, 
         certifiedToken, 
-        certifiedTokenExpir
+        certifiedTokenExpir,
+        subject
       ]);
       
       console.log('Session record created with user_id:', userId, 'and session_id:', sessionResult.rows[0].id);

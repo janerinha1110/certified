@@ -238,7 +238,8 @@ router.post('/start_quiz', validateStartQuiz, async (req, res) => {
       user.id,
       certifiedSkillId,
       certifiedToken,
-      tokenExpiration
+      tokenExpiration,
+      subject
     );
 
     console.log('Session created successfully with ID:', session.id, 'for user ID:', user.id);
