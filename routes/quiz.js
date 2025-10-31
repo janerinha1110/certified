@@ -580,16 +580,6 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
       firstQuestion = finalQuestions[0];
     }
 
-    // Ensure certified details for response
-    if (!certifiedResponse) {
-      // Try to hydrate subject details only for response (non-blocking if fails)
-      try {
-        certifiedResponse = await certifiedApiService.createNewEntry(subject);
-      } catch (e) {
-        certifiedResponse = { data: { subject_name: subject, quiz_status: 'unknown', is_paid: false } };
-      }
-    }
-
     return res.status(201).json({
       success: true,
       message: 'Quiz started successfully',
@@ -604,9 +594,9 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
         },
         certified_skill: {
           id: certifiedSkillId,
-          subject_name: certifiedResponse.data?.subject_name,
-          quiz_status: certifiedResponse.data?.quiz_status,
-          is_paid: certifiedResponse.data?.is_paid
+          subject_name: (certifiedResponse && certifiedResponse.data && certifiedResponse.data.subject_name) ? certifiedResponse.data.subject_name : subject,
+          quiz_status: (certifiedResponse && certifiedResponse.data && certifiedResponse.data.quiz_status) ? certifiedResponse.data.quiz_status : 'unknown',
+          is_paid: (certifiedResponse && certifiedResponse.data && typeof certifiedResponse.data.is_paid !== 'undefined') ? certifiedResponse.data.is_paid : false
         },
         session: {
           id: session.id,
