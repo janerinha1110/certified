@@ -512,7 +512,8 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
         user.id,
         certifiedSkillId,
         certifiedToken,
-        tokenExpiration
+        tokenExpiration,
+        subject
       );
     } else {
       certifiedSkillId = parseInt(session.certified_user_id);
