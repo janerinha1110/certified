@@ -515,9 +515,23 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
       certifiedSkillId = parseInt(session.certified_user_id);
     }
 
+    // Prepare quiz info (will update below)
+    let quizInfo = {
+      total_questions: 0,
+      questions_generated: false,
+      question_types: { easy: 0, medium: 0, hard: 0 }
+    };
+
     // Check if questions already exist for this session
     const existingQuestions = await questionService.getQuestionsBySession(session.id);
     let questionAdded = existingQuestions && existingQuestions.length > 0;
+    if (questionAdded) {
+      quizInfo = {
+        total_questions: existingQuestions.length,
+        questions_generated: true,
+        question_types: { easy: 0, medium: 0, hard: 0 }
+      };
+    }
 
     // If no questions, attempt to generate
     if (!questionAdded) {
@@ -540,6 +554,16 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
           if (questions.length > 0) {
             await questionService.createQuestions(questions, session.id, user.id);
             questionAdded = true;
+            // Match start_quiz behavior: set counts from extracted questions
+            quizInfo = {
+              total_questions: questions.length,
+              questions_generated: true,
+              question_types: {
+                easy: questions.filter(q => q.question_type === 'Easy').length,
+                medium: questions.filter(q => q.question_type === 'Medium').length,
+                hard: questions.filter(q => q.question_type === 'Hard').length
+              }
+            };
           }
         }
       }
@@ -547,16 +571,9 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
 
     // Prepare quiz info and first question similar to start_quiz
     const finalQuestions = await questionService.getQuestionsBySession(session.id);
-    let quizInfo = {
-      total_questions: finalQuestions.length,
-      questions_generated: finalQuestions.length > 0,
-      question_types: {
-        easy: 0,
-        medium: 0,
-        hard: 0
-      }
-    };
-    // We don't have per-type counts without re-extracting types; leave zeros in clone
+    // Ensure total reflects DB state; preserve type counts if already computed
+    quizInfo.total_questions = finalQuestions.length;
+    quizInfo.questions_generated = finalQuestions.length > 0;
 
     let firstQuestion = null;
     if (finalQuestions.length > 0) {
