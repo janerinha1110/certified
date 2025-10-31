@@ -343,6 +343,98 @@ router.post('/start_quiz', validateStartQuiz, async (req, res) => {
 });
 
 /**
+ * @swagger
+ * /api/start_quiz_clone:
+ *   post:
+ *     summary: Start a quiz session (clone) with conditional question generation
+ *     description: Same input and base flow as /api/start_quiz. If user/session/questions already exist, returns them; otherwise creates what's missing and attempts to generate/store questions. Adds question_added flag.
+ *     tags: [Quiz]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/StartQuizRequest'
+ *           examples:
+ *             example:
+ *               summary: Start (clone)
+ *               value:
+ *                 name: "John Doe"
+ *                 email: "john@example.com"
+ *                 phone: "918007880283"
+ *                 subject: "catia advanced"
+ *     responses:
+ *       201:
+ *         description: Quiz started successfully (clone)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/StartQuizResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         question_added:
+ *                           type: boolean
+ *                           description: True if questions were stored in this call; false otherwise
+ *                           example: true
+ *             examples:
+ *               success_with_questions:
+ *                 summary: Questions added this call
+ *                 value:
+ *                   success: true
+ *                   message: "Quiz started successfully"
+ *                   data:
+ *                     user:
+ *                       id: "uuid"
+ *                       name: "John Doe"
+ *                       email: "john@example.com"
+ *                       phone: "918007880283"
+ *                       subject: "catia advanced"
+ *                       created_at: "2025-10-31T10:00:00.000Z"
+ *                     certified_skill:
+ *                       id: 1804162
+ *                       subject_name: "catia advanced"
+ *                       quiz_status: "not_generated"
+ *                       is_paid: false
+ *                     session:
+ *                       id: "uuid"
+ *                       certified_token: "random-token"
+ *                       token_expiration: "2025-10-31T11:00:00.000Z"
+ *                     quiz:
+ *                       total_questions: 10
+ *                       questions_generated: true
+ *                       question_types:
+ *                         easy: 0
+ *                         medium: 0
+ *                         hard: 0
+ *                     first_question:
+ *                       question_id: "uuid"
+ *                       question: "Question text with options..."
+ *                     question_added: true
+ *               success_without_questions:
+ *                 summary: No questions added yet
+ *                 value:
+ *                   success: true
+ *                   message: "Quiz started successfully"
+ *                   data:
+ *                     user: { "...": "..." }
+ *                     certified_skill: { "...": "..." }
+ *                     session: { "...": "..." }
+ *                     quiz:
+ *                       total_questions: 0
+ *                       questions_generated: false
+ *                       question_types: { "easy": 0, "medium": 0, "hard": 0 }
+ *                     first_question: null
+ *                     question_added: false
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+/**
  * Clone of start_quiz with conditional question generation and polling support.
  * Behavior:
  * - If user+subject not found: runs the normal start_quiz flow.
