@@ -112,6 +112,25 @@ const validateStartQuiz = (req, res, next) => {
   next();
 };
 
+// Validation middleware (clone): require phone + subject, allow optional name, email, and session_id
+const validateStartQuizClone = (req, res, next) => {
+  const { phone, subject } = req.body;
+  if (!phone || !subject) {
+    return res.status(400).json({
+      success: false,
+      message: 'Missing required fields. Please provide phone and subject.'
+    });
+  }
+  const phoneRegex = /^\d{10,}$/;
+  if (!phoneRegex.test(String(phone).replace(/\D/g, ''))) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide a valid phone number.'
+    });
+  }
+  next();
+};
+
 /**
  * @swagger
  * /api/start_quiz:
@@ -219,7 +238,8 @@ router.post('/start_quiz', validateStartQuiz, async (req, res) => {
       user.id,
       certifiedSkillId,
       certifiedToken,
-      tokenExpiration
+      tokenExpiration,
+      subject
     );
 
     console.log('Session created successfully with ID:', session.id, 'for user ID:', user.id);
@@ -314,6 +334,290 @@ router.post('/start_quiz', validateStartQuiz, async (req, res) => {
     console.error('Error in start_quiz endpoint:', error);
     console.error('Error stack:', error.stack);
     
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/start_quiz_clone:
+ *   post:
+ *     summary: Start a quiz session (clone) with conditional question generation
+ *     description: Same input and base flow as /api/start_quiz. If user/session/questions already exist, returns them; otherwise creates what's missing and attempts to generate/store questions. Adds question_added flag.
+ *     tags: [Quiz]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/StartQuizRequest'
+ *           examples:
+ *             example:
+ *               summary: Start (clone)
+ *               value:
+ *                 name: "John Doe"
+ *                 email: "john@example.com"
+ *                 phone: "918007880283"
+ *                 subject: "catia advanced"
+ *     responses:
+ *       201:
+ *         description: Quiz started successfully (clone)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/StartQuizResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         question_added:
+ *                           type: boolean
+ *                           description: True if questions were stored in this call; false otherwise
+ *                           example: true
+ *             examples:
+ *               success_with_questions:
+ *                 summary: Questions added this call
+ *                 value:
+ *                   success: true
+ *                   message: "Quiz started successfully"
+ *                   data:
+ *                     user:
+ *                       id: "uuid"
+ *                       name: "John Doe"
+ *                       email: "john@example.com"
+ *                       phone: "918007880283"
+ *                       subject: "catia advanced"
+ *                       created_at: "2025-10-31T10:00:00.000Z"
+ *                     certified_skill:
+ *                       id: 1804162
+ *                       subject_name: "catia advanced"
+ *                       quiz_status: "not_generated"
+ *                       is_paid: false
+ *                     session:
+ *                       id: "uuid"
+ *                       certified_token: "random-token"
+ *                       token_expiration: "2025-10-31T11:00:00.000Z"
+ *                     quiz:
+ *                       total_questions: 10
+ *                       questions_generated: true
+ *                       question_types:
+ *                         easy: 0
+ *                         medium: 0
+ *                         hard: 0
+ *                     first_question:
+ *                       question_id: "uuid"
+ *                       question: "Question text with options..."
+ *                     question_added: true
+ *               success_without_questions:
+ *                 summary: No questions added yet
+ *                 value:
+ *                   success: true
+ *                   message: "Quiz started successfully"
+ *                   data:
+ *                     user: { "...": "..." }
+ *                     certified_skill: { "...": "..." }
+ *                     session: { "...": "..." }
+ *                     quiz:
+ *                       total_questions: 0
+ *                       questions_generated: false
+ *                       question_types: { "easy": 0, "medium": 0, "hard": 0 }
+ *                     first_question: null
+ *                     question_added: false
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+/**
+ * Clone of start_quiz with conditional question generation and polling support.
+ * Behavior:
+ * - If user+subject not found: runs the normal start_quiz flow.
+ * - If user exists: uses provided session_id or latest session; if no session, creates one.
+ * - If session has no questions: tries generate; if generate result has empty arrays, skip storing.
+ * - Returns same schema as start_quiz, plus question_added: true/false.
+ */
+router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
+  try {
+    const { name, email, phone, subject, session_id: providedSessionId } = req.body;
+
+    // Find or create user (createUser will return existing user if email+subject match)
+    let user;
+    if (name && email) {
+      user = await userService.createUser({ name, email, phone, subject });
+    } else {
+      // Lookup by phone+subject when name/email not provided
+      const userLookupQuery = `
+        SELECT id, name, email, phone, subject, created_at
+        FROM users
+        WHERE phone = $1 AND subject = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const ures = await query(userLookupQuery, [phone, subject]);
+      if (ures.rows.length > 0) {
+        user = ures.rows[0];
+      } else {
+        if (!name || !email) {
+          return res.status(400).json({
+            success: false,
+            message: 'User not found. Provide name and email to create a new user.'
+          });
+        }
+        user = await userService.createUser({ name, email, phone, subject });
+      }
+    }
+
+    // Resolve session: use provided session_id or latest for user
+    let session;
+    if (providedSessionId) {
+      // Only accept provided session if it belongs to this user and subject
+      const sessRes = await query(
+        'SELECT id, user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at FROM sessions WHERE id = $1 AND user_id = $2 AND subject = $3',
+        [providedSessionId, user.id, subject]
+      );
+      session = sessRes.rows[0] || null;
+    }
+    if (!session) {
+      // Strictly fetch the latest session for this user and this subject
+      const latestSessionQuery = `
+        SELECT id, user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at
+        FROM sessions
+        WHERE user_id = $1 AND subject = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const sres = await query(latestSessionQuery, [user.id, subject]);
+      session = sres.rows[0] || null;
+    }
+
+    // If no session, create one via certified API then create session record
+    let certifiedSkillId;
+    let certifiedResponse = null;
+    if (!session) {
+      certifiedResponse = await certifiedApiService.createNewEntry(subject);
+      if (certifiedResponse.result !== 'success') {
+        throw new Error(`Certified API error: ${certifiedResponse.message}`);
+      }
+      certifiedSkillId = certifiedResponse.data.id;
+      const certifiedToken = userService.generateCertifiedToken();
+      const tokenExpiration = userService.getTokenExpirationTime();
+      session = await userService.createSession(
+        user.id,
+        certifiedSkillId,
+        certifiedToken,
+        tokenExpiration,
+        subject
+      );
+    } else {
+      certifiedSkillId = parseInt(session.certified_user_id);
+    }
+
+    // Prepare quiz info (will update below)
+    let quizInfo = {
+      total_questions: 0,
+      questions_generated: false,
+      question_types: { easy: 0, medium: 0, hard: 0 }
+    };
+
+    // Check if questions already exist for this session
+    const existingQuestions = await questionService.getQuestionsBySession(session.id);
+    let questionAdded = existingQuestions && existingQuestions.length > 0;
+    if (questionAdded) {
+      quizInfo = {
+        total_questions: existingQuestions.length,
+        questions_generated: true,
+        question_types: { easy: 0, medium: 0, hard: 0 }
+      };
+    }
+
+    // If no questions, attempt to generate
+    if (!questionAdded) {
+      let quizData;
+      try {
+        quizData = await generateQuizService.generateQuiz(certifiedSkillId);
+      } catch (e) {
+        // Generation failed; return with question_added false
+        quizData = null;
+      }
+
+      if (quizData && quizData.result === 'success') {
+        const questionnaire = quizData.data?.quiz_question_answer?.questionaire || {};
+        const easyArr = Array.isArray(questionnaire.easy) ? questionnaire.easy : [];
+        const medArr = Array.isArray(questionnaire.medium) ? questionnaire.medium : [];
+        const hardArr = Array.isArray(questionnaire.hard) ? questionnaire.hard : [];
+
+        if (easyArr.length + medArr.length + hardArr.length > 0) {
+          const questions = generateQuizService.extractQuestions(quizData);
+          if (questions.length > 0) {
+            await questionService.createQuestions(questions, session.id, user.id);
+            questionAdded = true;
+            // Match start_quiz behavior: set counts from extracted questions
+            quizInfo = {
+              total_questions: questions.length,
+              questions_generated: true,
+              question_types: {
+                easy: questions.filter(q => q.question_type === 'Easy').length,
+                medium: questions.filter(q => q.question_type === 'Medium').length,
+                hard: questions.filter(q => q.question_type === 'Hard').length
+              }
+            };
+          }
+        }
+      }
+    }
+
+    // Prepare quiz info and first question similar to start_quiz
+    const finalQuestions = await questionService.getQuestionsBySession(session.id);
+    // Ensure total reflects DB state; preserve type counts if already computed
+    quizInfo.total_questions = finalQuestions.length;
+    quizInfo.questions_generated = finalQuestions.length > 0;
+
+    let firstQuestion = null;
+    if (finalQuestions.length > 0) {
+      firstQuestion = finalQuestions[0];
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Quiz started successfully',
+      data: {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          subject: user.subject,
+          created_at: user.created_at
+        },
+        certified_skill: {
+          id: certifiedSkillId,
+          subject_name: (certifiedResponse && certifiedResponse.data && certifiedResponse.data.subject_name) ? certifiedResponse.data.subject_name : subject,
+          quiz_status: (certifiedResponse && certifiedResponse.data && certifiedResponse.data.quiz_status) ? certifiedResponse.data.quiz_status : 'unknown',
+          is_paid: (certifiedResponse && certifiedResponse.data && typeof certifiedResponse.data.is_paid !== 'undefined') ? certifiedResponse.data.is_paid : false
+        },
+        session: {
+          id: session.id,
+          certified_token: session.certified_token,
+          token_expiration: session.certified_token_expires_at
+        },
+        quiz: quizInfo,
+        first_question: firstQuestion ? {
+          question_id: firstQuestion.id,
+          question: firstQuestion.question
+        } : null,
+        question_added: questionAdded
+      }
+    });
+  } catch (error) {
+    console.error('Error in start_quiz_clone endpoint:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Internal server error',
