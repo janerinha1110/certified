@@ -477,21 +477,23 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
     // Resolve session: use provided session_id or latest for user
     let session;
     if (providedSessionId) {
+      // Only accept provided session if it belongs to this user and subject
       const sessRes = await query(
-        'SELECT id, user_id, certified_user_id, certified_token, certified_token_expires_at, created_at FROM sessions WHERE id = $1 AND user_id = $2',
-        [providedSessionId, user.id]
+        'SELECT id, user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at FROM sessions WHERE id = $1 AND user_id = $2 AND subject = $3',
+        [providedSessionId, user.id, subject]
       );
       session = sessRes.rows[0] || null;
     }
     if (!session) {
+      // Strictly fetch the latest session for this user and this subject
       const latestSessionQuery = `
-        SELECT id, user_id, certified_user_id, certified_token, certified_token_expires_at, created_at
+        SELECT id, user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at
         FROM sessions
-        WHERE user_id = $1
+        WHERE user_id = $1 AND subject = $2
         ORDER BY created_at DESC
         LIMIT 1
       `;
-      const sres = await query(latestSessionQuery, [user.id]);
+      const sres = await query(latestSessionQuery, [user.id, subject]);
       session = sres.rows[0] || null;
     }
 
