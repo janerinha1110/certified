@@ -86,26 +86,47 @@ class GenerateQuizService {
       let allMediumQuestions = [];
       let allHardQuestions = [];
       
-      // Extract easy questions (q_id 1-5)
+      // Extract easy questions - try specific q_ids first, then fallback to first 5 available
       if (questionnaire.easy && Array.isArray(questionnaire.easy)) {
         const easyQIds = [1, 2, 3, 4, 5];
-        const easyQuestions = questionnaire.easy.filter(q => easyQIds.includes(q.q_id));
+        let easyQuestions = questionnaire.easy.filter(q => easyQIds.includes(q.q_id));
+        
+        // If we don't have 5 questions from specific IDs, take first 5 available
+        if (easyQuestions.length < 5 && questionnaire.easy.length >= 5) {
+          console.log(`⚠️  Only found ${easyQuestions.length} easy questions with q_ids 1-5, using first 5 available instead`);
+          easyQuestions = questionnaire.easy.slice(0, 5);
+        }
+        
         allEasyQuestions = processAllQuestions(easyQuestions);
         console.log(`📋 Found ${allEasyQuestions.length} easy questions (including those with code snippets)`);
       }
 
-      // Extract medium questions (q_id 11-13)
+      // Extract medium questions - try specific q_ids first, then fallback to first 3 available
       if (questionnaire.medium && Array.isArray(questionnaire.medium)) {
         const mediumQIds = [11, 12, 13];
-        const mediumQuestions = questionnaire.medium.filter(q => mediumQIds.includes(q.q_id));
+        let mediumQuestions = questionnaire.medium.filter(q => mediumQIds.includes(q.q_id));
+        
+        // If we don't have 3 questions from specific IDs, take first 3 available
+        if (mediumQuestions.length < 3 && questionnaire.medium.length >= 3) {
+          console.log(`⚠️  Only found ${mediumQuestions.length} medium questions with q_ids 11-13, using first 3 available instead`);
+          mediumQuestions = questionnaire.medium.slice(0, 3);
+        }
+        
         allMediumQuestions = processAllQuestions(mediumQuestions);
         console.log(`📋 Found ${allMediumQuestions.length} medium questions (including those with code snippets)`);
       }
 
-      // Extract hard questions (q_id 17-18)
+      // Extract hard questions - try specific q_ids first, then fallback to first 2 available
       if (questionnaire.hard && Array.isArray(questionnaire.hard)) {
         const hardQIds = [17, 18];
-        const hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
+        let hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
+        
+        // If we don't have 2 questions from specific IDs, take first 2 available
+        if (hardQuestions.length < 2 && questionnaire.hard.length >= 2) {
+          console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, using first 2 available instead`);
+          hardQuestions = questionnaire.hard.slice(0, 2);
+        }
+        
         allHardQuestions = processAllQuestions(hardQuestions);
         console.log(`📋 Found ${allHardQuestions.length} hard questions (including those with code snippets)`);
       }

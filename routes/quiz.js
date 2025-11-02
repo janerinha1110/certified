@@ -537,40 +537,102 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
       };
     }
 
-    // If no questions, attempt to generate
+    // If no questions, start background polling (non-blocking)
     if (!questionAdded) {
-      let quizData;
-      try {
-        quizData = await generateQuizService.generateQuiz(certifiedSkillId);
-      } catch (e) {
-        // Generation failed; return with question_added false
-        quizData = null;
-      }
-
-      if (quizData && quizData.result === 'success') {
-        const questionnaire = quizData.data?.quiz_question_answer?.questionaire || {};
-        const easyArr = Array.isArray(questionnaire.easy) ? questionnaire.easy : [];
-        const medArr = Array.isArray(questionnaire.medium) ? questionnaire.medium : [];
-        const hardArr = Array.isArray(questionnaire.hard) ? questionnaire.hard : [];
-
-        if (easyArr.length + medArr.length + hardArr.length > 0) {
-          const questions = generateQuizService.extractQuestions(quizData);
-          if (questions.length > 0) {
-            await questionService.createQuestions(questions, session.id, user.id);
-            questionAdded = true;
-            // Match start_quiz behavior: set counts from extracted questions
-            quizInfo = {
-              total_questions: questions.length,
-              questions_generated: true,
-              question_types: {
-                easy: questions.filter(q => q.question_type === 'Easy').length,
-                medium: questions.filter(q => q.question_type === 'Medium').length,
-                hard: questions.filter(q => q.question_type === 'Hard').length
+      console.log('🔄 Starting background polling for quiz generation...');
+      
+      // Start polling in background - don't await, let it run asynchronously
+      // This ensures API response returns immediately within timeout limit
+      (async () => {
+        const pollDelay = 3000; // 3 seconds between polls
+        const maxPollingTime = 90000; // 90 seconds maximum
+        const startTime = Date.now();
+        let attempt = 0;
+        let questionAddedInBackground = false;
+        let quizData;
+        
+        try {
+          while (!questionAddedInBackground && (Date.now() - startTime) < maxPollingTime) {
+            attempt++;
+            const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+            
+            try {
+              console.log(`🔄 [Background] Polling generate API (attempt ${attempt}, ${elapsedTime}s elapsed) for session ${session.id}...`);
+              quizData = await generateQuizService.generateQuiz(certifiedSkillId);
+              
+              // Check if we have questions available in all three arrays
+              const questionnaire = quizData?.data?.quiz_question_answer?.questionaire || {};
+              const easyArr = Array.isArray(questionnaire.easy) ? questionnaire.easy : [];
+              const medArr = Array.isArray(questionnaire.medium) ? questionnaire.medium : [];
+              const hardArr = Array.isArray(questionnaire.hard) ? questionnaire.hard : [];
+              const totalQuestionsAvailable = easyArr.length + medArr.length + hardArr.length;
+              
+              console.log(`📊 [Background] Quiz data received - Status: ${quizData?.data?.quiz_status || 'unknown'}, Questions available: ${totalQuestionsAvailable} (Easy: ${easyArr.length}, Medium: ${medArr.length}, Hard: ${hardArr.length}) for session ${session.id}`);
+              
+              // Check if all three arrays have questions populated
+              const hasEasyQuestions = easyArr.length > 0;
+              const hasMediumQuestions = medArr.length > 0;
+              const hasHardQuestions = hardArr.length > 0;
+              const allArraysPopulated = hasEasyQuestions && hasMediumQuestions && hasHardQuestions;
+              
+              // If we have questions available, try to extract and store them
+              if (totalQuestionsAvailable > 0) {
+                if (allArraysPopulated) {
+                  console.log(`✅ [Background] All question arrays are populated! Extracting questions for session ${session.id}...`);
+                } else {
+                  console.log(`⚠️  [Background] Not all arrays populated yet (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}. Continuing to poll...`);
+                }
+                
+                // Try to extract questions even if not all arrays are populated
+                try {
+                  const questions = generateQuizService.extractQuestions(quizData);
+                  if (questions.length > 0) {
+                    console.log(`✅ [Background] Extracted ${questions.length} questions, storing in database for session ${session.id}...`);
+                    await questionService.createQuestions(questions, session.id, user.id);
+                    questionAddedInBackground = true;
+                    
+                    console.log(`✅ [Background] Successfully stored ${questions.length} questions for session ${session.id}!`);
+                    break; // Exit polling loop on success
+                  } else {
+                    if (allArraysPopulated) {
+                      console.log(`⚠️  [Background] All arrays populated but extracted 0 questions for session ${session.id} - may need different q_ids`);
+                    } else {
+                      console.log(`⏳ [Background] Waiting for more questions to be populated for session ${session.id}...`);
+                    }
+                  }
+                } catch (extractError) {
+                  console.error(`❌ [Background] Error extracting questions for session ${session.id}:`, extractError.message);
+                  // Continue polling
+                }
+              } else {
+                console.log(`⏳ [Background] No questions available yet for session ${session.id}, continuing to poll...`);
               }
-            };
+              
+              // Wait before next poll (unless we're done)
+              if (!questionAddedInBackground && (Date.now() - startTime) < maxPollingTime) {
+                await new Promise(resolve => setTimeout(resolve, pollDelay));
+              }
+              
+            } catch (e) {
+              console.error(`❌ [Background] Quiz generation API error (attempt ${attempt}) for session ${session.id}:`, e.message);
+              // Wait before retrying even on error
+              if ((Date.now() - startTime) < maxPollingTime) {
+                await new Promise(resolve => setTimeout(resolve, pollDelay));
+              }
+            }
           }
+          
+          if (!questionAddedInBackground) {
+            const totalElapsed = Math.round((Date.now() - startTime) / 1000);
+            console.warn(`⚠️  [Background] Polling timeout reached after ${totalElapsed}s for session ${session.id}. Questions may not be generated yet.`);
+          }
+        } catch (error) {
+          console.error(`❌ [Background] Fatal error in polling loop for session ${session.id}:`, error);
         }
-      }
+      })(); // Immediately invoke async function - runs in background
+      
+      // Note: We're not awaiting the background task, so response returns immediately
+      console.log('✅ Background polling started - API will return response immediately');
     }
 
     // Prepare quiz info and first question similar to start_quiz
@@ -584,9 +646,15 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
       firstQuestion = finalQuestions[0];
     }
 
+    // Determine message based on question status
+    let responseMessage = 'Quiz started successfully';
+    if (!questionAdded && finalQuestions.length === 0) {
+      responseMessage = 'Quiz started successfully. Questions are being generated in the background. Please check back in a few moments.';
+    }
+    
     return res.status(201).json({
       success: true,
-      message: 'Quiz started successfully',
+      message: responseMessage,
       data: {
         user: {
           id: user.id,
