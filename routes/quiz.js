@@ -837,15 +837,62 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
     if (ures.rows.length > 0) {
       user = ures.rows[0];
     } else {
-      // User not found, need to create
+      // User not found by phone+subject, need to create or find by email
       if (!name) {
         return res.status(400).json({
           success: false,
           message: 'User not found. Provide name to create a new user.'
         });
       }
-      // Create user with email (can be empty string)
-      user = await userService.createUser({ name, email: userEmail, phone, subject });
+      
+      // If email is provided and not empty, try to find by email+subject first
+      // But only use it if the phone matches (to avoid wrong user assignment)
+      if (userEmail && userEmail.trim() !== '') {
+        const emailLookupQuery = `
+          SELECT id, name, email, phone, subject, created_at
+          FROM users
+          WHERE email = $1 AND subject = $2
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
+        const emailRes = await query(emailLookupQuery, [userEmail, subject]);
+        
+        if (emailRes.rows.length > 0) {
+          const foundUser = emailRes.rows[0];
+          // If phone matches, use this user; otherwise update phone or create new
+          if (foundUser.phone === phone) {
+            user = foundUser;
+            console.log('✅ Found user by email+subject with matching phone');
+          } else {
+            // Phone doesn't match - update the user's phone to match
+            console.log(`⚠️  User found by email+subject but phone mismatch. Updating phone from ${foundUser.phone} to ${phone}`);
+            const updatePhoneQuery = `
+              UPDATE users
+              SET phone = $1, updated_at = NOW()
+              WHERE id = $2
+              RETURNING id, name, email, phone, subject, created_at
+            `;
+            const updateRes = await query(updatePhoneQuery, [phone, foundUser.id]);
+            user = updateRes.rows[0];
+            console.log('✅ Updated user phone to match request');
+          }
+        } else {
+          // No user found by email+subject, create new user
+          user = await userService.createUser({ name, email: userEmail, phone, subject });
+        }
+      } else {
+        // Email is empty or not provided - create new user directly
+        // Don't use createUser() as it will match users with empty email
+        console.log('📝 Creating new user with empty email');
+        const createUserQuery = `
+          INSERT INTO users(name, email, phone, subject)
+          VALUES ($1, $2, $3, $4)
+          RETURNING id, name, email, phone, subject, created_at
+        `;
+        const createRes = await query(createUserQuery, [name, userEmail || '', phone, subject]);
+        user = createRes.rows[0];
+        console.log('✅ Created new user with ID:', user.id);
+      }
     }
 
     // Resolve session: use provided session_id or latest for user
@@ -1788,10 +1835,29 @@ router.post('/auto_submit_quiz_v2', async (req, res) => {
     const sessionResult = await query(sessionQuery, [phone, subject]);
     
     if (sessionResult.rows.length === 0) {
-      return res.status(404).json({
-        result: "failed",
-        message: "No active session found for this phone and subject"
-      });
+      // Debug: Check if user exists but has no session
+      const userCheckQuery = `
+        SELECT id, name, email, phone, subject, created_at
+        FROM users
+        WHERE phone = $1 AND subject = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const userCheckResult = await query(userCheckQuery, [phone, subject]);
+      
+      if (userCheckResult.rows.length === 0) {
+        console.log('❌ No user found for phone:', phone, 'subject:', subject);
+        return res.status(404).json({
+          result: "failed",
+          message: "No user found for this phone and subject. Please start a quiz session first."
+        });
+      } else {
+        console.log('⚠️ User found but no session exists for phone:', phone, 'subject:', subject);
+        return res.status(404).json({
+          result: "failed",
+          message: "No active session found for this phone and subject. Please start a quiz session first."
+        });
+      }
     }
     
     const sessionData = sessionResult.rows[0];

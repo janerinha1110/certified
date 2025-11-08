@@ -5,6 +5,21 @@ class QuestionService {
     try {
       console.log(`📝 Creating ${questions.length} questions for session ${sessionId}`);
       
+      // First, verify that the session exists and belongs to the user
+      const sessionCheckQuery = `
+        SELECT id, user_id
+        FROM sessions
+        WHERE id = $1 AND user_id = $2
+      `;
+      const sessionCheck = await query(sessionCheckQuery, [sessionId, userId]);
+      
+      if (sessionCheck.rows.length === 0) {
+        console.error(`❌ Session ${sessionId} not found or doesn't belong to user ${userId}`);
+        throw new Error(`Session ${sessionId} not found or doesn't belong to user ${userId}`);
+      }
+      
+      console.log(`✅ Verified session ${sessionId} exists and belongs to user ${userId}`);
+      
       const createdQuestions = [];
       
       for (let i = 0; i < questions.length; i++) {
@@ -37,20 +52,37 @@ class QuestionService {
           scenarioValue = String(textContext);
         }
 
-        const result = await query(questionQuery, [
-          sessionId,
-          userId,
-          formattedQuestion,
-          '', // answer starts empty
-          questionData.correct_answer,
-          false, // answered starts as false
-          i + 1, // question number (1-based)
-          questionData.unique_quiz_id || questionData.q_id || null, // unique quiz_id or fallback to q_id
-          scenarioValue
-        ]);
-        
-        createdQuestions.push(result.rows[0]);
-        console.log(`📝 Created question ${i + 1}/${questions.length} (question_no: ${i + 1}, quiz_id: ${questionData.unique_quiz_id || questionData.q_id}): ${questionData.question.substring(0, 50)}...`);
+        try {
+          const result = await query(questionQuery, [
+            sessionId,
+            userId,
+            formattedQuestion,
+            '', // answer starts empty
+            questionData.correct_answer,
+            false, // answered starts as false
+            i + 1, // question number (1-based)
+            questionData.unique_quiz_id || questionData.q_id || null, // unique quiz_id or fallback to q_id
+            scenarioValue
+          ]);
+          
+          createdQuestions.push(result.rows[0]);
+          console.log(`📝 Created question ${i + 1}/${questions.length} (question_no: ${i + 1}, quiz_id: ${questionData.unique_quiz_id || questionData.q_id}): ${questionData.question.substring(0, 50)}...`);
+        } catch (insertError) {
+          // Check if it's a foreign key constraint violation
+          if (insertError.message && insertError.message.includes('foreign key constraint')) {
+            console.error(`❌ Foreign key constraint violation when inserting question ${i + 1}. Session ${sessionId} may have been deleted.`);
+            // Re-verify session exists
+            const recheckSession = await query(sessionCheckQuery, [sessionId, userId]);
+            if (recheckSession.rows.length === 0) {
+              throw new Error(`Session ${sessionId} was deleted during question insertion. Cannot continue.`);
+            } else {
+              // Session exists, but foreign key still fails - might be a different issue
+              throw new Error(`Foreign key constraint violation: ${insertError.message}`);
+            }
+          } else {
+            throw insertError;
+          }
+        }
       }
       
       console.log(`✅ Successfully created ${createdQuestions.length} questions`);
