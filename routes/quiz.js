@@ -824,20 +824,39 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
     // Find or create user
     let user;
     
-    // First, try to lookup by phone+subject (regardless of email)
-    const userLookupQuery = `
+    // First, try to lookup by phone only (regardless of subject)
+    const phoneOnlyLookupQuery = `
       SELECT id, name, email, phone, subject, created_at
       FROM users
-      WHERE phone = $1 AND subject = $2
+      WHERE phone = $1
       ORDER BY created_at DESC
       LIMIT 1
     `;
-    const ures = await query(userLookupQuery, [phone, subject]);
+    const phoneOnlyRes = await query(phoneOnlyLookupQuery, [phone]);
     
-    if (ures.rows.length > 0) {
-      user = ures.rows[0];
+    if (phoneOnlyRes.rows.length > 0) {
+      const foundUser = phoneOnlyRes.rows[0];
+      
+      // Check if subject matches
+      if (foundUser.subject === subject) {
+        // Subject matches - use the user as is
+        user = foundUser;
+        console.log('✅ Found user by phone with matching subject');
+      } else {
+        // Subject doesn't match - update the user's subject to match request
+        console.log(`⚠️  User found by phone but subject mismatch. Updating subject from "${foundUser.subject}" to "${subject}"`);
+        const updateSubjectQuery = `
+          UPDATE users
+          SET subject = $1, updated_at = NOW()
+          WHERE id = $2
+          RETURNING id, name, email, phone, subject, created_at
+        `;
+        const updateRes = await query(updateSubjectQuery, [subject, foundUser.id]);
+        user = updateRes.rows[0];
+        console.log('✅ Updated user subject to match request');
+      }
     } else {
-      // User not found by phone+subject, need to create or find by email
+      // User not found by phone - create new user
       if (!name) {
         return res.status(400).json({
           success: false,
@@ -845,109 +864,67 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
         });
       }
       
-      // If email is provided and not empty, try to find by email+subject first
-      // But only use it if the phone matches (to avoid wrong user assignment)
+      // Create new user
       if (userEmail && userEmail.trim() !== '') {
-        const emailLookupQuery = `
-          SELECT id, name, email, phone, subject, created_at
-          FROM users
-          WHERE email = $1 AND subject = $2
-          ORDER BY created_at DESC
-          LIMIT 1
-        `;
-        const emailRes = await query(emailLookupQuery, [userEmail, subject]);
-        
-        if (emailRes.rows.length > 0) {
-          const foundUser = emailRes.rows[0];
-          // If phone matches, use this user; otherwise update phone or create new
-          if (foundUser.phone === phone) {
-            user = foundUser;
-            console.log('✅ Found user by email+subject with matching phone');
-          } else {
-            // Phone doesn't match - update the user's phone to match
-            console.log(`⚠️  User found by email+subject but phone mismatch. Updating phone from ${foundUser.phone} to ${phone}`);
-            const updatePhoneQuery = `
-              UPDATE users
-              SET phone = $1, updated_at = NOW()
-              WHERE id = $2
-              RETURNING id, name, email, phone, subject, created_at
-            `;
-            const updateRes = await query(updatePhoneQuery, [phone, foundUser.id]);
-            user = updateRes.rows[0];
-            console.log('✅ Updated user phone to match request');
-          }
-        } else {
-          // No user found by email+subject, create new user
-          user = await userService.createUser({ name, email: userEmail, phone, subject });
-        }
+        // Email provided - use userService.createUser
+        user = await userService.createUser({ name, email: userEmail, phone, subject });
       } else {
-        // Email is empty or not provided
-        // Check if user with empty email already exists for this phone+subject
-        // Since email has UNIQUE constraint, we need to handle empty email carefully
-        const emptyEmailCheckQuery = `
-          SELECT id, name, email, phone, subject, created_at
-          FROM users
-          WHERE email = '' AND phone = $1 AND subject = $2
-          ORDER BY created_at DESC
-          LIMIT 1
-        `;
-        const emptyEmailRes = await query(emptyEmailCheckQuery, [phone, subject]);
-        
-        if (emptyEmailRes.rows.length > 0) {
-          // User with empty email already exists for this phone+subject - use it
-          user = emptyEmailRes.rows[0];
-          console.log('✅ Found existing user with empty email for phone+subject');
-        } else {
-          // No user found - try to create new one with empty string
-          // Email column has NOT NULL constraint, so we must use empty string, not NULL
-          try {
-            console.log('📝 Creating new user with empty email');
-            const createUserQuery = `
-              INSERT INTO users(name, email, phone, subject)
-              VALUES ($1, '', $2, $3)
-              RETURNING id, name, email, phone, subject, created_at
+        // Email is empty or not provided - create directly with empty string
+        // Email column has NOT NULL constraint, so we must use empty string, not NULL
+        try {
+          console.log('📝 Creating new user with empty email');
+          const createUserQuery = `
+            INSERT INTO users(name, email, phone, subject)
+            VALUES ($1, '', $2, $3)
+            RETURNING id, name, email, phone, subject, created_at
+          `;
+          const createRes = await query(createUserQuery, [name, phone, subject]);
+          user = createRes.rows[0];
+          console.log('✅ Created new user with ID:', user.id);
+        } catch (createError) {
+          // If duplicate key error (email UNIQUE constraint), find existing user with empty email
+          if (createError.code === '23505' && createError.constraint === 'users_email_key') {
+            console.log('⚠️  User with empty email already exists (UNIQUE constraint), finding by phone');
+            // Try to find user with empty email and matching phone
+            const findEmptyEmailQuery = `
+              SELECT id, name, email, phone, subject, created_at
+              FROM users
+              WHERE email = '' AND phone = $1
+              ORDER BY created_at DESC
+              LIMIT 1
             `;
-            const createRes = await query(createUserQuery, [name, phone, subject]);
-            user = createRes.rows[0];
-            console.log('✅ Created new user with ID:', user.id);
-          } catch (createError) {
-            // If duplicate key error (email UNIQUE constraint), find existing user with empty email
-            if (createError.code === '23505' && createError.constraint === 'users_email_key') {
-              console.log('⚠️  User with empty email already exists (UNIQUE constraint), finding by phone+subject');
-              // Try to find user with empty email and matching phone+subject
-              const findEmptyEmailQuery = `
-                SELECT id, name, email, phone, subject, created_at
-                FROM users
-                WHERE email = '' AND phone = $1 AND subject = $2
-                ORDER BY created_at DESC
-                LIMIT 1
+            const findRes = await query(findEmptyEmailQuery, [phone]);
+            if (findRes.rows.length > 0) {
+              // Found user with empty email - update subject
+              const updateSubjectQuery = `
+                UPDATE users
+                SET subject = $1, updated_at = NOW()
+                WHERE id = $2
+                RETURNING id, name, email, phone, subject, created_at
               `;
-              const findRes = await query(findEmptyEmailQuery, [phone, subject]);
-              if (findRes.rows.length > 0) {
-                user = findRes.rows[0];
-                console.log('✅ Found user with empty email after duplicate key error');
-              } else {
-                // User with empty email exists but for different phone/subject
-                // This is a conflict - we can't create another user with empty email
-                // Update the existing user's phone and subject to match
-                console.log('⚠️  User with empty email exists for different phone/subject, updating...');
-                const updateUserQuery = `
-                  UPDATE users
-                  SET phone = $1, subject = $2, updated_at = NOW()
-                  WHERE email = ''
-                  RETURNING id, name, email, phone, subject, created_at
-                `;
-                const updateRes = await query(updateUserQuery, [phone, subject]);
-                if (updateRes.rows.length > 0) {
-                  user = updateRes.rows[0];
-                  console.log('✅ Updated existing user with empty email to match phone+subject');
-                } else {
-                  throw new Error('Failed to update user with empty email');
-                }
-              }
+              const updateRes = await query(updateSubjectQuery, [subject, findRes.rows[0].id]);
+              user = updateRes.rows[0];
+              console.log('✅ Found user with empty email and updated subject');
             } else {
-              throw createError;
+              // User with empty email exists but for different phone
+              // Update the existing user's phone and subject to match
+              console.log('⚠️  User with empty email exists for different phone, updating...');
+              const updateUserQuery = `
+                UPDATE users
+                SET phone = $1, subject = $2, updated_at = NOW()
+                WHERE email = ''
+                RETURNING id, name, email, phone, subject, created_at
+              `;
+              const updateRes = await query(updateUserQuery, [phone, subject]);
+              if (updateRes.rows.length > 0) {
+                user = updateRes.rows[0];
+                console.log('✅ Updated existing user with empty email to match phone+subject');
+              } else {
+                throw new Error('Failed to update user with empty email');
+              }
             }
+          } else {
+            throw createError;
           }
         }
       }
