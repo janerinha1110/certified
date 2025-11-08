@@ -881,17 +881,59 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
           user = await userService.createUser({ name, email: userEmail, phone, subject });
         }
       } else {
-        // Email is empty or not provided - create new user directly
-        // Don't use createUser() as it will match users with empty email
-        console.log('📝 Creating new user with empty email');
-        const createUserQuery = `
-          INSERT INTO users(name, email, phone, subject)
-          VALUES ($1, $2, $3, $4)
-          RETURNING id, name, email, phone, subject, created_at
+        // Email is empty or not provided
+        // Check if user with empty email already exists for this phone+subject
+        // Since email has UNIQUE constraint, we need to handle empty email carefully
+        const emptyEmailCheckQuery = `
+          SELECT id, name, email, phone, subject, created_at
+          FROM users
+          WHERE (email = '' OR email IS NULL) AND phone = $1 AND subject = $2
+          ORDER BY created_at DESC
+          LIMIT 1
         `;
-        const createRes = await query(createUserQuery, [name, userEmail || '', phone, subject]);
-        user = createRes.rows[0];
-        console.log('✅ Created new user with ID:', user.id);
+        const emptyEmailRes = await query(emptyEmailCheckQuery, [phone, subject]);
+        
+        if (emptyEmailRes.rows.length > 0) {
+          // User with empty email already exists for this phone+subject - use it
+          user = emptyEmailRes.rows[0];
+          console.log('✅ Found existing user with empty email for phone+subject');
+        } else {
+          // No user found - try to create new one with NULL email instead of empty string
+          // This avoids UNIQUE constraint violation if multiple users have empty email
+          try {
+            console.log('📝 Creating new user with NULL email');
+            const createUserQuery = `
+              INSERT INTO users(name, email, phone, subject)
+              VALUES ($1, NULL, $2, $3)
+              RETURNING id, name, email, phone, subject, created_at
+            `;
+            const createRes = await query(createUserQuery, [name, phone, subject]);
+            user = createRes.rows[0];
+            console.log('✅ Created new user with ID:', user.id);
+          } catch (createError) {
+            // If NULL also fails (shouldn't happen), try empty string and handle duplicate key error
+            if (createError.code === '23505' && createError.constraint === 'users_email_key') {
+              console.log('⚠️  User with empty email already exists, trying to find by phone+subject');
+              // Try to find user with empty email and matching phone+subject
+              const findEmptyEmailQuery = `
+                SELECT id, name, email, phone, subject, created_at
+                FROM users
+                WHERE (email = '' OR email IS NULL) AND phone = $1 AND subject = $2
+                ORDER BY created_at DESC
+                LIMIT 1
+              `;
+              const findRes = await query(findEmptyEmailQuery, [phone, subject]);
+              if (findRes.rows.length > 0) {
+                user = findRes.rows[0];
+                console.log('✅ Found user with empty email after duplicate key error');
+              } else {
+                throw new Error('Failed to create or find user with empty email');
+              }
+            } else {
+              throw createError;
+            }
+          }
+        }
       }
     }
 
