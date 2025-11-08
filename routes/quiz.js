@@ -1656,27 +1656,27 @@ router.post('/auto_submit_quiz', async (req, res) => {
  *               email:
  *                 type: string
  *                 format: email
- *                 description: Email address to update (required if type is 1)
+ *                 description: Email address to update (required if type is "1")
  *                 example: "newemail@example.com"
  *               type:
- *                 type: integer
- *                 enum: [1, 2]
- *                 description: Type 1 = update user email before submission, Type 2 = normal flow (no email update)
- *                 example: 1
+ *                 type: string
+ *                 enum: ["1", "2"]
+ *                 description: Type "1" = update user email before submission, Type "2" = normal flow (no email update)
+ *                 example: "1"
  *           examples:
  *             with_email_update:
- *               summary: Update email before submission (type 1)
+ *               summary: Update email before submission (type "1")
  *               value:
  *                 phone: "918007880283"
  *                 subject: "Java"
  *                 email: "newemail@example.com"
- *                 type: 1
+ *                 type: "1"
  *             normal_flow:
- *               summary: Normal flow without email update (type 2)
+ *               summary: Normal flow without email update (type "2")
  *               value:
  *                 phone: "918007880283"
  *                 subject: "Java"
- *                 type: 2
+ *                 type: "2"
  *     responses:
  *       200:
  *         description: Quiz auto-submitted successfully - Returns same response as /api/submit_quiz_response
@@ -1743,24 +1743,27 @@ router.post('/auto_submit_quiz_v2', async (req, res) => {
       });
     }
     
-    // Validate type if provided
-    if (type !== undefined && type !== 1 && type !== 2) {
+    // Validate type if provided (accept string "1" or "2")
+    if (type !== undefined && type !== "1" && type !== "2" && type !== 1 && type !== 2) {
       return res.status(400).json({
         result: "failed",
-        message: "Type must be 1 or 2"
+        message: "Type must be \"1\" or \"2\""
       });
     }
     
-    // If type is 1, email is required
-    if (type === 1 && (!email || email.trim() === '')) {
+    // Normalize type to string for consistent comparison
+    const typeStr = String(type);
+    
+    // If type is "1", email is required
+    if (typeStr === "1" && (!email || email.trim() === '')) {
       return res.status(400).json({
         result: "failed",
-        message: "Email is required when type is 1"
+        message: "Email is required when type is \"1\""
       });
     }
     
-    // If type is 1, validate email format
-    if (type === 1 && email) {
+    // If type is "1", validate email format
+    if (typeStr === "1" && email) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         return res.status(400).json({
@@ -1802,8 +1805,8 @@ router.post('/auto_submit_quiz_v2', async (req, res) => {
       certified_user_id: sessionData.certified_user_id
     });
     
-    // If type is 1, update user email
-    if (type === 1 && email) {
+    // If type is "1", update user email
+    if (typeStr === "1" && email) {
       console.log('📧 Updating user email from', sessionData.email, 'to', email);
       
       const updateEmailQuery = `
