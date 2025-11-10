@@ -79,8 +79,18 @@ class QuestionService {
               // Session exists, but foreign key still fails - might be a different issue
               throw new Error(`Foreign key constraint violation: ${insertError.message}`);
             }
+          } else if (insertError.code === '23505') {
+            // Unique constraint violation (duplicate quiz_id or other unique constraint)
+            console.error(`⚠️  Unique constraint violation when inserting question ${i + 1} (quiz_id: ${questionData.unique_quiz_id || questionData.q_id}). Skipping duplicate question.`);
+            console.error(`   Error details: ${insertError.message}`);
+            // Continue with next question instead of stopping
+            continue;
           } else {
-            throw insertError;
+            // Log the error but continue with other questions
+            console.error(`❌ Error inserting question ${i + 1}/${questions.length}: ${insertError.message}`);
+            console.error(`   Question data: q_id=${questionData.q_id}, quiz_id=${questionData.unique_quiz_id || questionData.q_id}`);
+            // Continue with next question instead of throwing
+            continue;
           }
         }
       }

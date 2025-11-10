@@ -92,9 +92,14 @@ class GenerateQuizService {
         let easyQuestions = questionnaire.easy.filter(q => easyQIds.includes(q.q_id));
         
         // If we don't have 5 questions from specific IDs, take first 5 available
-        if (easyQuestions.length < 5 && questionnaire.easy.length >= 5) {
-          console.log(`⚠️  Only found ${easyQuestions.length} easy questions with q_ids 1-5, using first 5 available instead`);
-          easyQuestions = questionnaire.easy.slice(0, 5);
+        if (easyQuestions.length < 5) {
+          if (questionnaire.easy.length >= 5) {
+            console.log(`⚠️  Only found ${easyQuestions.length} easy questions with q_ids 1-5, using first 5 available instead`);
+            easyQuestions = questionnaire.easy.slice(0, 5);
+          } else if (questionnaire.easy.length > 0) {
+            console.log(`⚠️  Only found ${easyQuestions.length} easy questions with q_ids 1-5, and only ${questionnaire.easy.length} total available. Using all available.`);
+            easyQuestions = questionnaire.easy.slice(0, Math.min(5, questionnaire.easy.length));
+          }
         }
         
         allEasyQuestions = processAllQuestions(easyQuestions);
@@ -107,9 +112,14 @@ class GenerateQuizService {
         let mediumQuestions = questionnaire.medium.filter(q => mediumQIds.includes(q.q_id));
         
         // If we don't have 3 questions from specific IDs, take first 3 available
-        if (mediumQuestions.length < 3 && questionnaire.medium.length >= 3) {
-          console.log(`⚠️  Only found ${mediumQuestions.length} medium questions with q_ids 11-13, using first 3 available instead`);
-          mediumQuestions = questionnaire.medium.slice(0, 3);
+        if (mediumQuestions.length < 3) {
+          if (questionnaire.medium.length >= 3) {
+            console.log(`⚠️  Only found ${mediumQuestions.length} medium questions with q_ids 11-13, using first 3 available instead`);
+            mediumQuestions = questionnaire.medium.slice(0, 3);
+          } else if (questionnaire.medium.length > 0) {
+            console.log(`⚠️  Only found ${mediumQuestions.length} medium questions with q_ids 11-13, and only ${questionnaire.medium.length} total available. Using all available.`);
+            mediumQuestions = questionnaire.medium.slice(0, Math.min(3, questionnaire.medium.length));
+          }
         }
         
         allMediumQuestions = processAllQuestions(mediumQuestions);
@@ -122,36 +132,52 @@ class GenerateQuizService {
         let hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
         
         // If we don't have 2 questions from specific IDs, take first 2 available
-        if (hardQuestions.length < 2 && questionnaire.hard.length >= 2) {
-          console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, using first 2 available instead`);
-          hardQuestions = questionnaire.hard.slice(0, 2);
+        if (hardQuestions.length < 2) {
+          if (questionnaire.hard.length >= 2) {
+            console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, using first 2 available instead`);
+            hardQuestions = questionnaire.hard.slice(0, 2);
+          } else if (questionnaire.hard.length > 0) {
+            console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, and only ${questionnaire.hard.length} total available. Using all available.`);
+            hardQuestions = questionnaire.hard.slice(0, Math.min(2, questionnaire.hard.length));
+          }
         }
         
         allHardQuestions = processAllQuestions(hardQuestions);
         console.log(`📋 Found ${allHardQuestions.length} hard questions (including those with code snippets)`);
       }
 
-      // Enforce exact distribution and order: 1-5 Easy, 6-8 Medium, 9-10 Hard
+      // CRITICAL RULE: Always maintain exact question distribution
+      // Easy: 5 questions (positions 1-5, quiz_id 1-5)
+      // Medium: 3 questions (positions 6-8, quiz_id 6-8)
+      // Hard: 2 questions (positions 9-10, quiz_id 9-10)
+      // Total: 10 questions
       const targetTotal = 10;
-      const easyCount = Math.min(5, allEasyQuestions.length);
-      const mediumCount = Math.min(3, allMediumQuestions.length);
-      const hardCount = Math.min(2, allHardQuestions.length);
+      const easyCount = Math.min(5, allEasyQuestions.length);   // Always try to get 5
+      const mediumCount = Math.min(3, allMediumQuestions.length); // Always try to get 3
+      const hardCount = Math.min(2, allHardQuestions.length);   // Always try to get 2
       
       const totalPlanned = easyCount + mediumCount + hardCount;
       if (totalPlanned !== targetTotal) {
         console.log(`⚠️  Planned distribution is ${totalPlanned} (Easy ${easyCount}, Medium ${mediumCount}, Hard ${hardCount}). Some categories may have insufficient questions.`);
       }
       
-      // Add questions to the final array
+      // Add questions to the final array with sequential quiz_id based on final position (1-10)
+      // This ensures no duplicate quiz_ids even if same q_id appears in different difficulty levels
+      // IMPORTANT: quiz_id must match question position to maintain the rule (1-5 Easy, 6-8 Medium, 9-10 Hard)
+      let questionNumber = 1;
+      
+      // Easy questions: positions 1-5 (quiz_id 1-5)
       allEasyQuestions.slice(0, easyCount).forEach((q, index) => {
         questions.push({
           ...q,
           question_type: 'Easy',
-          unique_quiz_id: `${q.q_id}`
+          unique_quiz_id: `${questionNumber}` // Use sequential position instead of q_id
         });
+        questionNumber++;
       });
 
-      // Medium: ensure first selected (Q6) has scenario if possible
+      // Medium questions: positions 6-8 (quiz_id 6-8)
+      // Ensure first selected (Q6) has scenario if possible
       if (mediumCount > 0) {
         const hasScenario = (q) => (q.scenario_title && q.scenario_title.trim() !== '') || (q.text_context && q.text_context.trim() !== '');
         const mediumWithScenarioIndex = allMediumQuestions.findIndex(hasScenario);
@@ -172,12 +198,14 @@ class GenerateQuizService {
           questions.push({
             ...q,
             question_type: 'Medium',
-            unique_quiz_id: `${q.q_id}`
+            unique_quiz_id: `${questionNumber}` // Use sequential position instead of q_id
           });
+          questionNumber++;
         });
       }
 
-      // Hard: ensure first selected (Q9) has scenario if possible
+      // Hard questions: positions 9-10 (quiz_id 9-10)
+      // Ensure first selected (Q9) has scenario if possible
       if (hardCount > 0) {
         const hasScenario = (q) => (q.scenario_title && q.scenario_title.trim() !== '') || (q.text_context && q.text_context.trim() !== '');
         const hardWithScenarioIndex = allHardQuestions.findIndex(hasScenario);
@@ -198,8 +226,9 @@ class GenerateQuizService {
           questions.push({
             ...q,
             question_type: 'Hard',
-            unique_quiz_id: `${q.q_id}`
+            unique_quiz_id: `${questionNumber}` // Use sequential position instead of q_id
           });
+          questionNumber++;
         });
       }
 
