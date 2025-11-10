@@ -660,26 +660,29 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
                   console.log(`⚠️  [Background] Not all arrays populated yet (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}. Continuing to poll...`);
                 }
                 
-                // Try to extract questions even if not all arrays are populated
-                try {
-                  const questions = generateQuizService.extractQuestions(quizData);
-                  if (questions.length > 0) {
-                    console.log(`✅ [Background] Extracted ${questions.length} questions, storing in database for session ${session.id}...`);
-                    await questionService.createQuestions(questions, session.id, user.id);
-                    questionAddedInBackground = true;
-                    
-                    console.log(`✅ [Background] Successfully stored ${questions.length} questions for session ${session.id}!`);
-                    break; // Exit polling loop on success
-                  } else {
-                    if (allArraysPopulated) {
-                      console.log(`⚠️  [Background] All arrays populated but extracted 0 questions for session ${session.id} - may need different q_ids`);
+                // Only extract and store when all arrays are populated AND we have exactly 10 questions
+                // Keep polling until we have all 10 questions ready
+                if (allArraysPopulated) {
+                  try {
+                    const questions = generateQuizService.extractQuestions(quizData);
+                    // CRITICAL: Only store in database if we have exactly 10 questions
+                    if (questions.length === 10) {
+                      console.log(`✅ [Background] Extracted exactly 10 questions, storing in database for session ${session.id}...`);
+                      await questionService.createQuestions(questions, session.id, user.id);
+                      questionAddedInBackground = true;
+                      
+                      console.log(`✅ [Background] Successfully stored all 10 questions for session ${session.id}!`);
+                      break; // Exit polling loop on success
                     } else {
-                      console.log(`⏳ [Background] Waiting for more questions to be populated for session ${session.id}...`);
+                      console.log(`⏳ [Background] All arrays populated but only extracted ${questions.length} questions (need exactly 10). Continuing to poll for session ${session.id}...`);
+                      // Continue polling - don't store partial questions
                     }
+                  } catch (extractError) {
+                    console.error(`❌ [Background] Error extracting questions for session ${session.id}:`, extractError.message);
+                    // Continue polling
                   }
-                } catch (extractError) {
-                  console.error(`❌ [Background] Error extracting questions for session ${session.id}:`, extractError.message);
-                  // Continue polling
+                } else {
+                  console.log(`⏳ [Background] Waiting for all arrays to be populated (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}...`);
                 }
               } else {
                 console.log(`⏳ [Background] No questions available yet for session ${session.id}, continuing to poll...`);
@@ -1086,26 +1089,29 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
                   console.log(`⚠️  [Background] Not all arrays populated yet (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}. Continuing to poll...`);
                 }
                 
-                // Try to extract questions even if not all arrays are populated
-                try {
-                  const questions = generateQuizService.extractQuestions(quizData);
-                  if (questions.length > 0) {
-                    console.log(`✅ [Background] Extracted ${questions.length} questions, storing in database for session ${session.id}...`);
-                    await questionService.createQuestions(questions, session.id, user.id);
-                    questionAddedInBackground = true;
-                    
-                    console.log(`✅ [Background] Successfully stored ${questions.length} questions for session ${session.id}!`);
-                    break; // Exit polling loop on success
-                  } else {
-                    if (allArraysPopulated) {
-                      console.log(`⚠️  [Background] All arrays populated but extracted 0 questions for session ${session.id} - may need different q_ids`);
+                // Only extract and store when all arrays are populated AND we have exactly 10 questions
+                // Keep polling until we have all 10 questions ready
+                if (allArraysPopulated) {
+                  try {
+                    const questions = generateQuizService.extractQuestions(quizData);
+                    // CRITICAL: Only store in database if we have exactly 10 questions
+                    if (questions.length === 10) {
+                      console.log(`✅ [Background] Extracted exactly 10 questions, storing in database for session ${session.id}...`);
+                      await questionService.createQuestions(questions, session.id, user.id);
+                      questionAddedInBackground = true;
+                      
+                      console.log(`✅ [Background] Successfully stored all 10 questions for session ${session.id}!`);
+                      break; // Exit polling loop on success
                     } else {
-                      console.log(`⏳ [Background] Waiting for more questions to be populated for session ${session.id}...`);
+                      console.log(`⏳ [Background] All arrays populated but only extracted ${questions.length} questions (need exactly 10). Continuing to poll for session ${session.id}...`);
+                      // Continue polling - don't store partial questions
                     }
+                  } catch (extractError) {
+                    console.error(`❌ [Background] Error extracting questions for session ${session.id}:`, extractError.message);
+                    // Continue polling
                   }
-                } catch (extractError) {
-                  console.error(`❌ [Background] Error extracting questions for session ${session.id}:`, extractError.message);
-                  // Continue polling
+                } else {
+                  console.log(`⏳ [Background] Waiting for all arrays to be populated (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}...`);
                 }
               } else {
                 console.log(`⏳ [Background] No questions available yet for session ${session.id}, continuing to poll...`);
@@ -1558,26 +1564,29 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
                   console.log(`⚠️  [Background] Not all arrays populated yet (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}. Continuing to poll...`);
                 }
                 
-                // Try to extract questions even if not all arrays are populated
-                try {
-                  const questions = generateQuizService.extractQuestions(quizData);
-                  if (questions.length > 0) {
-                    console.log(`✅ [Background] Extracted ${questions.length} questions, storing in database for session ${session.id}...`);
-                    await questionService.createQuestions(questions, session.id, user.id);
-                    questionAddedInBackground = true;
-                    
-                    console.log(`✅ [Background] Successfully stored ${questions.length} questions for session ${session.id}!`);
-                    break; // Exit polling loop on success
-                  } else {
-                    if (allArraysPopulated) {
-                      console.log(`⚠️  [Background] All arrays populated but extracted 0 questions for session ${session.id} - may need different q_ids`);
+                // Only extract and store when all arrays are populated AND we have exactly 10 questions
+                // Keep polling until we have all 10 questions ready
+                if (allArraysPopulated) {
+                  try {
+                    const questions = generateQuizService.extractQuestions(quizData);
+                    // CRITICAL: Only store in database if we have exactly 10 questions
+                    if (questions.length === 10) {
+                      console.log(`✅ [Background] Extracted exactly 10 questions, storing in database for session ${session.id}...`);
+                      await questionService.createQuestions(questions, session.id, user.id);
+                      questionAddedInBackground = true;
+                      
+                      console.log(`✅ [Background] Successfully stored all 10 questions for session ${session.id}!`);
+                      break; // Exit polling loop on success
                     } else {
-                      console.log(`⏳ [Background] Waiting for more questions to be populated for session ${session.id}...`);
+                      console.log(`⏳ [Background] All arrays populated but only extracted ${questions.length} questions (need exactly 10). Continuing to poll for session ${session.id}...`);
+                      // Continue polling - don't store partial questions
                     }
+                  } catch (extractError) {
+                    console.error(`❌ [Background] Error extracting questions for session ${session.id}:`, extractError.message);
+                    // Continue polling
                   }
-                } catch (extractError) {
-                  console.error(`❌ [Background] Error extracting questions for session ${session.id}:`, extractError.message);
-                  // Continue polling
+                } else {
+                  console.log(`⏳ [Background] Waiting for all arrays to be populated (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}...`);
                 }
               } else {
                 console.log(`⏳ [Background] No questions available yet for session ${session.id}, continuing to poll...`);
