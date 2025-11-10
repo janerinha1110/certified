@@ -31,11 +31,17 @@ const handleQuizResponseSubmission = async (userData) => {
   // Get the score to determine success level
   const score = result.data.quiz_results?.score || 0;
   // Categorize score per new rules:
-  // 0-40 => true_low, 50-60 => true_pass, 70-100 => true_high
-  // For scores outside these bands (41-49, 61-69), default to true_low unless specified otherwise
-  let successValue = 'true_low';
-  if (score >= 70 && score <= 100) {
-    successValue = 'true_high';
+  // 100 => true_high_100, 90 => true_high_90, 80 => true_high_80, 70 => true_high_70
+  // 50-60 => true_pass, 0-40 => true_low
+  let successValue = 'true_low'; // Default fallback
+  if (score === 100) {
+    successValue = 'true_high_100';
+  } else if (score === 90) {
+    successValue = 'true_high_90';
+  } else if (score === 80) {
+    successValue = 'true_high_80';
+  } else if (score === 70) {
+    successValue = 'true_high_70';
   } else if (score >= 50 && score <= 60) {
     successValue = 'true_pass';
   } else if (score >= 0 && score <= 40) {
@@ -2109,9 +2115,9 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
  *               properties:
  *                 success:
  *                   type: string
- *                   enum: ["true_high", "true_low"]
- *                   example: "true_high"
- *                   description: "true_high if score > 60, true_low if score <= 60"
+ *                   enum: ["true_high_100", "true_high_90", "true_high_80", "true_high_70", "true_pass", "true_low"]
+ *                   example: "true_high_80"
+ *                   description: "true_high_100 (score 100), true_high_90 (score 90), true_high_80 (score 80), true_high_70 (score 70), true_pass (score 50-60), true_low (score 0-40)"
  *                 message:
  *                   type: string
  *                   example: "Quiz response submitted successfully"
@@ -2345,8 +2351,9 @@ router.post('/auto_submit_quiz', async (req, res) => {
  *               properties:
  *                 success:
  *                   type: string
- *                   enum: ["true_high", "true_pass", "true_low"]
- *                   example: "true_high"
+ *                   enum: ["true_high_100", "true_high_90", "true_high_80", "true_high_70", "true_pass", "true_low"]
+ *                   example: "true_high_80"
+ *                   description: "true_high_100 (score 100), true_high_90 (score 90), true_high_80 (score 80), true_high_70 (score 70), true_pass (score 50-60), true_low (score 0-40)"
  *                 message:
  *                   type: string
  *                   example: "Quiz response submitted successfully"
