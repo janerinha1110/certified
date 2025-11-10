@@ -147,14 +147,14 @@ class GenerateQuizService {
       }
 
       // CRITICAL RULE: Always maintain exact question distribution
-      // Easy: 5 questions (positions 1-5, quiz_id 1-5)
-      // Medium: 3 questions (positions 6-8, quiz_id 6-8)
-      // Hard: 2 questions (positions 9-10, quiz_id 9-10)
+      // Easy: 4 questions (positions 1-4, quiz_id 1-4)
+      // Medium: 3 questions (positions 5-7, quiz_id 5-7)
+      // Hard: 3 questions (positions 8-10, quiz_id 8-10)
       // Total: 10 questions
       const targetTotal = 10;
-      const easyCount = Math.min(5, allEasyQuestions.length);   // Always try to get 5
+      const easyCount = Math.min(4, allEasyQuestions.length);   // Always try to get 4
       const mediumCount = Math.min(3, allMediumQuestions.length); // Always try to get 3
-      const hardCount = Math.min(2, allHardQuestions.length);   // Always try to get 2
+      const hardCount = Math.min(3, allHardQuestions.length);   // Always try to get 3
       
       const totalPlanned = easyCount + mediumCount + hardCount;
       if (totalPlanned !== targetTotal) {
@@ -163,10 +163,10 @@ class GenerateQuizService {
       
       // Add questions to the final array with sequential quiz_id based on final position (1-10)
       // This ensures no duplicate quiz_ids even if same q_id appears in different difficulty levels
-      // IMPORTANT: quiz_id must match question position to maintain the rule (1-5 Easy, 6-8 Medium, 9-10 Hard)
+      // IMPORTANT: quiz_id must match question position to maintain the rule (1-4 Easy, 5-7 Medium, 8-10 Hard)
       let questionNumber = 1;
       
-      // Easy questions: positions 1-5 (quiz_id 1-5)
+      // Easy questions: positions 1-4 (quiz_id 1-4)
       allEasyQuestions.slice(0, easyCount).forEach((q, index) => {
         questions.push({
           ...q,
@@ -176,8 +176,8 @@ class GenerateQuizService {
         questionNumber++;
       });
 
-      // Medium questions: positions 6-8 (quiz_id 6-8)
-      // Ensure first selected (Q6) has scenario if possible
+      // Medium questions: positions 5-7 (quiz_id 5-7)
+      // Ensure first selected (Q5) has scenario if possible
       if (mediumCount > 0) {
         const hasScenario = (q) => (q.scenario_title && q.scenario_title.trim() !== '') || (q.text_context && q.text_context.trim() !== '');
         const mediumWithScenarioIndex = allMediumQuestions.findIndex(hasScenario);
@@ -204,8 +204,8 @@ class GenerateQuizService {
         });
       }
 
-      // Hard questions: positions 9-10 (quiz_id 9-10)
-      // Ensure first selected (Q9) has scenario if possible
+      // Hard questions: positions 8-10 (quiz_id 8-10)
+      // Ensure first selected (Q8) has scenario if possible
       if (hardCount > 0) {
         const hasScenario = (q) => (q.scenario_title && q.scenario_title.trim() !== '') || (q.text_context && q.text_context.trim() !== '');
         const hardWithScenarioIndex = allHardQuestions.findIndex(hasScenario);

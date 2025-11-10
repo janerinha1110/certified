@@ -50,10 +50,10 @@ class QuestionService {
           RETURNING id, session_id, user_id, question, answer, correct_answer, answered, created_at, question_no, quiz_id, scenario
         `;
         
-        // Build scenario only for question 6 (first Medium) and 9 (first Hard)
+        // Build scenario only for question 5 (first Medium) and 8 (first Hard)
         let scenarioValue = null;
         const textContext = questionData.text_context || questionData.textContext || null;
-        const isScenarioPosition = (i + 1 === 6) || (i + 1 === 9);
+        const isScenarioPosition = (i + 1 === 5) || (i + 1 === 8);
         if (isScenarioPosition && textContext) {
           // Store only text_context
           scenarioValue = String(textContext);
@@ -223,10 +223,10 @@ D) ${option_d}`;
         question_no: nextQuestion.question_no,
         current_question_no: currentQuestion.question_no,
         total_questions: 10,
-        scenario: (nextQuestion.question_no === 6 || nextQuestion.question_no === 9)
+        scenario: (nextQuestion.question_no === 5 || nextQuestion.question_no === 8)
           ? (nextQuestion.scenario && String(nextQuestion.scenario).trim() !== '' ? nextQuestion.scenario : null)
           : null,
-        has_scenario: (nextQuestion.question_no === 6 || nextQuestion.question_no === 9)
+        has_scenario: (nextQuestion.question_no === 5 || nextQuestion.question_no === 8)
           ? !!(nextQuestion.scenario && String(nextQuestion.scenario).trim() !== '')
           : false
       };
