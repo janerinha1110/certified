@@ -126,19 +126,19 @@ class GenerateQuizService {
         console.log(`📋 Found ${allMediumQuestions.length} medium questions (including those with code snippets)`);
       }
 
-      // Extract hard questions - try specific q_ids first, then fallback to first 2 available
+      // Extract hard questions - try specific q_ids first, then fallback to first 3 available
       if (questionnaire.hard && Array.isArray(questionnaire.hard)) {
         const hardQIds = [17, 18];
         let hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
         
-        // If we don't have 2 questions from specific IDs, take first 2 available
-        if (hardQuestions.length < 2) {
-          if (questionnaire.hard.length >= 2) {
-            console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, using first 2 available instead`);
-            hardQuestions = questionnaire.hard.slice(0, 2);
+        // If we don't have 3 questions from specific IDs, take first 3 available
+        if (hardQuestions.length < 3) {
+          if (questionnaire.hard.length >= 3) {
+            console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, using first 3 available instead`);
+            hardQuestions = questionnaire.hard.slice(0, 3);
           } else if (questionnaire.hard.length > 0) {
             console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, and only ${questionnaire.hard.length} total available. Using all available.`);
-            hardQuestions = questionnaire.hard.slice(0, Math.min(2, questionnaire.hard.length));
+            hardQuestions = questionnaire.hard.slice(0, Math.min(3, questionnaire.hard.length));
           }
         }
         
