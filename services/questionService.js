@@ -5,6 +5,13 @@ class QuestionService {
     try {
       console.log(`📝 Creating ${questions.length} questions for session ${sessionId}`);
       
+      // CRITICAL: Only allow storing exactly 10 questions to maintain the rule (5 Easy, 3 Medium, 2 Hard)
+      if (questions.length !== 10) {
+        const errorMsg = `Cannot store ${questions.length} questions. Must have exactly 10 questions (5 Easy, 3 Medium, 2 Hard).`;
+        console.error(`❌ ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      
       // First, verify that the session exists and belongs to the user
       const sessionCheckQuery = `
         SELECT id, user_id

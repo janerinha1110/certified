@@ -604,12 +604,21 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
     };
 
     // Check if questions already exist for this session
+    // CRITICAL: question_added should only be true when exactly 10 questions are stored
     const existingQuestions = await questionService.getQuestionsBySession(session.id);
-    let questionAdded = existingQuestions && existingQuestions.length > 0;
+    let questionAdded = existingQuestions && existingQuestions.length === 10;
     if (questionAdded) {
       quizInfo = {
         total_questions: existingQuestions.length,
         questions_generated: true,
+        question_types: { easy: 0, medium: 0, hard: 0 }
+      };
+    } else if (existingQuestions && existingQuestions.length > 0 && existingQuestions.length < 10) {
+      // Partial questions exist but not all 10 - set to false and continue polling
+      console.log(`⚠️  Only ${existingQuestions.length} questions found (need 10). question_added will be false.`);
+      quizInfo = {
+        total_questions: existingQuestions.length,
+        questions_generated: false,
         question_types: { easy: 0, medium: 0, hard: 0 }
       };
     }
@@ -719,7 +728,10 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
     const finalQuestions = await questionService.getQuestionsBySession(session.id);
     // Ensure total reflects DB state; preserve type counts if already computed
     quizInfo.total_questions = finalQuestions.length;
-    quizInfo.questions_generated = finalQuestions.length > 0;
+    quizInfo.questions_generated = finalQuestions.length === 10; // Only true when exactly 10 questions
+    
+    // CRITICAL: Recalculate questionAdded based on final count - must be exactly 10
+    questionAdded = finalQuestions.length === 10;
 
     let firstQuestion = null;
     if (finalQuestions.length > 0) {
@@ -728,8 +740,12 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
 
     // Determine message based on question status
     let responseMessage = 'Quiz started successfully';
-    if (!questionAdded && finalQuestions.length === 0) {
-      responseMessage = 'Quiz started successfully. Questions are being generated in the background. Please check back in a few moments.';
+    if (!questionAdded) {
+      if (finalQuestions.length === 0) {
+        responseMessage = 'Quiz started successfully. Questions are being generated in the background. Please check back in a few moments.';
+      } else if (finalQuestions.length < 10) {
+        responseMessage = `Quiz started successfully. ${finalQuestions.length} questions generated so far (need 10). Questions are being generated in the background. Please check back in a few moments.`;
+      }
     }
     
     return res.status(201).json({
@@ -1033,12 +1049,21 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
     };
 
     // Check if questions already exist for this session
+    // CRITICAL: question_added should only be true when exactly 10 questions are stored
     const existingQuestions = await questionService.getQuestionsBySession(session.id);
-    let questionAdded = existingQuestions && existingQuestions.length > 0;
+    let questionAdded = existingQuestions && existingQuestions.length === 10;
     if (questionAdded) {
       quizInfo = {
         total_questions: existingQuestions.length,
         questions_generated: true,
+        question_types: { easy: 0, medium: 0, hard: 0 }
+      };
+    } else if (existingQuestions && existingQuestions.length > 0 && existingQuestions.length < 10) {
+      // Partial questions exist but not all 10 - set to false and continue polling
+      console.log(`⚠️  Only ${existingQuestions.length} questions found (need 10). question_added will be false.`);
+      quizInfo = {
+        total_questions: existingQuestions.length,
+        questions_generated: false,
         question_types: { easy: 0, medium: 0, hard: 0 }
       };
     }
@@ -1148,7 +1173,10 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
     const finalQuestions = await questionService.getQuestionsBySession(session.id);
     // Ensure total reflects DB state; preserve type counts if already computed
     quizInfo.total_questions = finalQuestions.length;
-    quizInfo.questions_generated = finalQuestions.length > 0;
+    quizInfo.questions_generated = finalQuestions.length === 10; // Only true when exactly 10 questions
+    
+    // CRITICAL: Recalculate questionAdded based on final count - must be exactly 10
+    questionAdded = finalQuestions.length === 10;
 
     let firstQuestion = null;
     if (finalQuestions.length > 0) {
@@ -1157,8 +1185,12 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
 
     // Determine message based on question status
     let responseMessage = 'Quiz started successfully';
-    if (!questionAdded && finalQuestions.length === 0) {
-      responseMessage = 'Quiz started successfully. Questions are being generated in the background. Please check back in a few moments.';
+    if (!questionAdded) {
+      if (finalQuestions.length === 0) {
+        responseMessage = 'Quiz started successfully. Questions are being generated in the background. Please check back in a few moments.';
+      } else if (finalQuestions.length < 10) {
+        responseMessage = `Quiz started successfully. ${finalQuestions.length} questions generated so far (need 10). Questions are being generated in the background. Please check back in a few moments.`;
+      }
     }
     
     return res.status(201).json({
@@ -1508,12 +1540,21 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
     };
 
     // Check if questions already exist for this session
+    // CRITICAL: question_added should only be true when exactly 10 questions are stored
     const existingQuestions = await questionService.getQuestionsBySession(session.id);
-    let questionAdded = existingQuestions && existingQuestions.length > 0;
+    let questionAdded = existingQuestions && existingQuestions.length === 10;
     if (questionAdded) {
       quizInfo = {
         total_questions: existingQuestions.length,
         questions_generated: true,
+        question_types: { easy: 0, medium: 0, hard: 0 }
+      };
+    } else if (existingQuestions && existingQuestions.length > 0 && existingQuestions.length < 10) {
+      // Partial questions exist but not all 10 - set to false and continue polling
+      console.log(`⚠️  Only ${existingQuestions.length} questions found (need 10). question_added will be false.`);
+      quizInfo = {
+        total_questions: existingQuestions.length,
+        questions_generated: false,
         question_types: { easy: 0, medium: 0, hard: 0 }
       };
     }
@@ -1623,7 +1664,10 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
     const finalQuestions = await questionService.getQuestionsBySession(session.id);
     // Ensure total reflects DB state; preserve type counts if already computed
     quizInfo.total_questions = finalQuestions.length;
-    quizInfo.questions_generated = finalQuestions.length > 0;
+    quizInfo.questions_generated = finalQuestions.length === 10; // Only true when exactly 10 questions
+    
+    // CRITICAL: Recalculate questionAdded based on final count - must be exactly 10
+    questionAdded = finalQuestions.length === 10;
 
     let firstQuestion = null;
     if (finalQuestions.length > 0) {
@@ -1632,8 +1676,12 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
 
     // Determine message based on question status
     let responseMessage = 'Quiz started successfully';
-    if (!questionAdded && finalQuestions.length === 0) {
-      responseMessage = 'Quiz started successfully. Questions are being generated in the background. Please check back in a few moments.';
+    if (!questionAdded) {
+      if (finalQuestions.length === 0) {
+        responseMessage = 'Quiz started successfully. Questions are being generated in the background. Please check back in a few moments.';
+      } else if (finalQuestions.length < 10) {
+        responseMessage = `Quiz started successfully. ${finalQuestions.length} questions generated so far (need 10). Questions are being generated in the background. Please check back in a few moments.`;
+      }
     }
     
     return res.status(201).json({
