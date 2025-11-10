@@ -69,6 +69,45 @@ class CertifiedApiService {
       throw new Error(`Failed to create certified entry: ${error.message}`);
     }
   }
+
+  async getSubjectFromList(list, option) {
+    try {
+      console.log('🎯 Getting subject from list and option:', { list, option });
+      
+      const url = 'https://xgfy-czuw-092q.m2.xano.io/api:Jb3ejqkw/selected_subject';
+      
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+
+      const data = {
+        list: list,
+        option: option
+      };
+
+      const response = await axios.post(url, data, {
+        headers,
+        timeout: 10000, // 10 second timeout
+        httpsAgent: new (require('https').Agent)({
+          rejectUnauthorized: false // Ignore SSL certificate errors
+        })
+      });
+
+      if (response.data.result === 'success' && response.data.data) {
+        console.log('✅ Received subject from API:', response.data.data);
+        return response.data.data; // Returns the subject string (e.g., "Scrum Master")
+      } else {
+        throw new Error(`API returned error: ${response.data.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Get Subject API Error:', error.message);
+      if (error.response) {
+        console.error('Response data:', error.response.data);
+        console.error('Response status:', error.response.status);
+      }
+      throw new Error(`Failed to get subject from list: ${error.message}`);
+    }
+  }
 }
 
 module.exports = new CertifiedApiService();
