@@ -232,7 +232,7 @@ class GenerateQuizService {
         });
       }
 
-      console.log(`📋 Final distribution (ordered): ${easyCount} Easy (1-5), ${mediumCount} Medium (6-8), ${hardCount} Hard (9-10) = ${questions.length} total questions`);
+      console.log(`📋 Final distribution (ordered): ${easyCount} Easy (1-4), ${mediumCount} Medium (5-7), ${hardCount} Hard (8-10) = ${questions.length} total questions`);
       
       // If we still don't have exactly 10 questions, log a warning
       if (questions.length !== targetTotal) {
