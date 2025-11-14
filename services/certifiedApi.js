@@ -41,7 +41,7 @@ class CertifiedApiService {
       const data = {
         subject_name: subjectName,
         utm_object: {
-          utm_source: "",
+          utm_source: "certified_wa_flow",
           utm_medium: "",
           utm_campaign: ""
         },

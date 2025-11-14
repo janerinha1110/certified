@@ -946,8 +946,8 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
         try {
           console.log('📝 Creating new user with empty email');
           const createUserQuery = `
-            INSERT INTO users(name, email, phone, subject)
-            VALUES ($1, '', $2, $3)
+            INSERT INTO users(name, email, phone, subject, created_at)
+            VALUES ($1, '', $2, $3, NOW())
             RETURNING id, name, email, phone, subject, created_at
           `;
           const createRes = await query(createUserQuery, [name, phone, subject]);
@@ -1437,8 +1437,8 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
         try {
           console.log('📝 Creating new user with empty email');
           const createUserQuery = `
-            INSERT INTO users(name, email, phone, subject)
-            VALUES ($1, '', $2, $3)
+            INSERT INTO users(name, email, phone, subject, created_at)
+            VALUES ($1, '', $2, $3, NOW())
             RETURNING id, name, email, phone, subject, created_at
           `;
           const createRes = await query(createUserQuery, [name, phone, finalSubject]);

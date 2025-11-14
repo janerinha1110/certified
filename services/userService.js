@@ -49,8 +49,8 @@ class UserService {
       
       // Insert new user into users table
       const userQuery = `
-        INSERT INTO users(name, email, phone, subject) 
-        VALUES ($1, $2, $3, $4) 
+        INSERT INTO users(name, email, phone, subject, created_at) 
+        VALUES ($1, $2, $3, $4, NOW()) 
         RETURNING id, name, email, phone, subject, created_at
       `;
       
@@ -75,8 +75,8 @@ class UserService {
       }
 
       const sessionQuery = `
-        INSERT INTO sessions(user_id, certified_user_id, certified_token, certified_token_expires_at, subject)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO sessions(user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at)
+        VALUES ($1, $2, $3, $4, $5, NOW())
         RETURNING id, user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at
       `;
       

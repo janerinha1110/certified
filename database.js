@@ -28,6 +28,11 @@ const testConnection = async () => {
   try {
     const client = await pool.connect();
     console.log('🧪 Testing database connection...');
+    
+    // Set timezone to IST (Asia/Kolkata) for this connection
+    await client.query("SET timezone = 'Asia/Kolkata'");
+    console.log('🕐 Database timezone set to IST (Asia/Kolkata)');
+    
     const result = await client.query('SELECT NOW() as current_time');
     console.log('✅ Database connection test successful:', result.rows[0].current_time);
     client.release();
@@ -75,15 +80,24 @@ const verifyQuestionsTable = async () => {
 setTimeout(verifyQuestionsTable, 2000);
 
 // Helper function to execute queries with retry logic
+// Sets timezone to IST for each query to ensure all timestamps are in IST
 const query = async (text, params, retries = 3) => {
   const start = Date.now();
   
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const res = await pool.query(text, params);
-      const duration = Date.now() - start;
-      console.log('Executed query', { text, duration, rows: res.rowCount });
-      return res;
+      const client = await pool.connect();
+      try {
+        // Set timezone to IST for this query session
+        await client.query("SET timezone = 'Asia/Kolkata'");
+        
+        const res = await client.query(text, params);
+        const duration = Date.now() - start;
+        console.log('Executed query', { text, duration, rows: res.rowCount });
+        return res;
+      } finally {
+        client.release();
+      }
     } catch (error) {
       console.error(`Database query error (attempt ${attempt}/${retries}):`, error.message);
       

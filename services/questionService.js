@@ -44,9 +44,10 @@ class QuestionService {
             answered,
             question_no,
             quiz_id,
-            scenario
+            scenario,
+            created_at
           ) 
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
           RETURNING id, session_id, user_id, question, answer, correct_answer, answered, created_at, question_no, quiz_id, scenario
         `;
         
