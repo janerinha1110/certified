@@ -2549,4 +2549,125 @@ router.post('/auto_submit_quiz_v2', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/export_hr_management_data:
+ *   get:
+ *     summary: Export HR Management user data with questions
+ *     description: Fetches all users with subject "HR Management", their sessions, and questions, then exports as CSV
+ *     tags: [Quiz]
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, json]
+ *           default: csv
+ *         description: Output format (csv or json)
+ *     responses:
+ *       200:
+ *         description: Data exported successfully
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/export_hr_management_data', async (req, res) => {
+  try {
+    const format = req.query.format || 'csv';
+    const subject = 'HR Management';
+
+    console.log(`📊 Exporting ${subject} data in ${format} format...`);
+
+    // Query to fetch all users with HR Management subject, their sessions, and questions
+    const exportQuery = `
+      SELECT 
+        u.phone,
+        u.email,
+        u.name,
+        s.certified_user_id as certified_skill_id,
+        s.id as session_id,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'question_no', q.question_no,
+              'answered', q.answered
+            ) ORDER BY q.question_no ASC
+          ) FILTER (WHERE q.id IS NOT NULL),
+          '[]'::json
+        ) as questions
+      FROM users u
+      INNER JOIN sessions s ON u.id = s.user_id AND s.subject = $1
+      LEFT JOIN questions q ON s.id = q.session_id
+      WHERE u.subject = $1
+      GROUP BY u.id, u.phone, u.email, u.name, s.certified_user_id, s.id
+      ORDER BY u.created_at DESC
+    `;
+
+    const result = await query(exportQuery, [subject]);
+    const rows = result.rows;
+
+    console.log(`✅ Found ${rows.length} users with ${subject} sessions`);
+
+    if (format === 'json') {
+      // Return JSON format
+      return res.status(200).json({
+        success: true,
+        message: `Exported ${rows.length} records`,
+        data: rows.map(row => ({
+          phone: row.phone,
+          email: row.email,
+          name: row.name,
+          certified_skill_id: row.certified_skill_id,
+          questions: row.questions || []
+        }))
+      });
+    } else {
+      // Return CSV format
+      const csvRows = [];
+      
+      // CSV Header
+      csvRows.push('phone,email,name,certified_skill_id,questions');
+      
+      // CSV Data Rows
+      for (const row of rows) {
+        const phone = (row.phone || '').replace(/"/g, '""');
+        const email = (row.email || '').replace(/"/g, '""');
+        const name = (row.name || '').replace(/"/g, '""');
+        const certifiedSkillId = row.certified_skill_id || '';
+        const questionsJson = JSON.stringify(row.questions || []);
+        const questionsEscaped = questionsJson.replace(/"/g, '""');
+        
+        csvRows.push(`"${phone}","${email}","${name}","${certifiedSkillId}","${questionsEscaped}"`);
+      }
+      
+      const csvContent = csvRows.join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="hr_management_export_${new Date().toISOString().split('T')[0]}.csv"`);
+      return res.status(200).send(csvContent);
+    }
+  } catch (error) {
+    console.error('❌ Error exporting HR Management data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export HR Management data',
+      error: error.message,
+      ...(process.env.NODE_ENV === 'development' && { details: error.stack })
+    });
+  }
+});
+
 module.exports = router;
