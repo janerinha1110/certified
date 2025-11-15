@@ -7,6 +7,8 @@ const questionService = require('../services/questionService');
 const quizResponseService = require('../services/quizResponseService');
 const { query } = require('../database');
 const { body, validationResult } = require('express-validator');
+const mixpanelService = require('../utils/mixpanelService');
+const { toIST } = require('../utils/timezone');
 
 // Shared function for quiz response submission logic
 const handleQuizResponseSubmission = async (userData) => {
@@ -25,6 +27,13 @@ const handleQuizResponseSubmission = async (userData) => {
   // Check if result has data and if it's not empty
   if (!result.data || Object.keys(result.data).length === 0) {
     console.error('❌ Service returned empty data object');
+    // Track submission failure
+    mixpanelService.trackQuizSubmissionFailed({
+      email,
+      phone,
+      certified_user_skill_id,
+      error_message: 'Service returned empty data'
+    });
     throw new Error('Service returned empty data - check service logs');
   }
   
@@ -47,6 +56,19 @@ const handleQuizResponseSubmission = async (userData) => {
   } else if (score >= 0 && score <= 40) {
     successValue = 'true_low';
   }
+
+  // Track quiz scored
+  mixpanelService.trackQuizScored({
+    user_id: result.data.user?.id,
+    session_id: result.data.session?.id,
+    email,
+    phone,
+    score,
+    score_category: successValue,
+    correct_answers: result.data.quiz_results?.correct_answers || 0,
+    total_questions: result.data.quiz_results?.total_questions || 0,
+    certified_user_skill_id
+  });
   
   // Format response to match the exact structure you want
   const formattedResponse = {
@@ -293,6 +315,16 @@ router.post('/start_quiz', validateStartQuiz, async (req, res) => {
     
     console.log('Starting quiz for user:', { name, email, phone, subject });
 
+    // Track quiz started
+    mixpanelService.trackQuizStarted({
+      user_id: null, // Will be set after user creation
+      email,
+      phone,
+      name,
+      subject,
+      endpoint: 'start_quiz'
+    });
+
     // Step 1: Create user in database
     const user = await userService.createUser({
       name,
@@ -357,12 +389,41 @@ router.post('/start_quiz', validateStartQuiz, async (req, res) => {
             hard: questions.filter(q => q.question_type === 'Hard').length
           }
         };
+
+        // Track questions generated
+        mixpanelService.trackQuizQuestionsGenerated({
+          user_id: user.id,
+          session_id: session.id,
+          email,
+          phone,
+          subject,
+          total_questions: storedQuestions.length,
+          question_types: quizInfo.question_types
+        });
       } else {
         console.log('⚠️  Quiz generation failed:', quizData.message);
+        // Track generation failure
+        mixpanelService.trackQuizQuestionsGenerationFailed({
+          user_id: user.id,
+          session_id: session.id,
+          email,
+          phone,
+          subject,
+          error_message: quizData.message
+        });
       }
     } catch (error) {
       console.log('⚠️  Quiz generation failed (API may be outdated):', error.message);
       console.log('📝 Continuing without quiz questions...');
+      // Track generation failure
+      mixpanelService.trackQuizQuestionsGenerationFailed({
+        user_id: user.id,
+        session_id: session.id,
+        email,
+        phone,
+        subject,
+        error_message: error.message
+      });
     }
 
     // Step 7: Get the first question for the current session
@@ -416,6 +477,13 @@ router.post('/start_quiz', validateStartQuiz, async (req, res) => {
   } catch (error) {
     console.error('Error in start_quiz endpoint:', error);
     console.error('Error stack:', error.stack);
+    
+    // Track error
+    mixpanelService.trackQuizError({
+      endpoint: 'start_quiz',
+      error_message: error.message,
+      subject: req.body?.subject
+    });
     
     res.status(500).json({
       success: false,
@@ -529,6 +597,15 @@ router.post('/start_quiz', validateStartQuiz, async (req, res) => {
 router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
   try {
     const { name, email, phone, subject, session_id: providedSessionId } = req.body;
+
+    // Track quiz started
+    mixpanelService.trackQuizStarted({
+      email,
+      phone,
+      name,
+      subject,
+      endpoint: 'start_quiz_clone'
+    });
 
     // Find or create user (createUser will return existing user if email+subject match)
     let user;
@@ -686,6 +763,21 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
                       await questionService.createQuestions(questions, session.id, user.id);
                       questionAddedInBackground = true;
                       
+                      // Track questions generated
+                      mixpanelService.trackQuizQuestionsGenerated({
+                        user_id: user.id,
+                        session_id: session.id,
+                        email: user.email || '',
+                        phone: user.phone,
+                        subject: subject,
+                        total_questions: questions.length,
+                        question_types: {
+                          easy: questions.filter(q => q.question_type === 'Easy').length,
+                          medium: questions.filter(q => q.question_type === 'Medium').length,
+                          hard: questions.filter(q => q.question_type === 'Hard').length
+                        }
+                      });
+                      
                       console.log(`✅ [Background] Successfully stored all 10 questions for session ${session.id}!`);
                       break; // Exit polling loop on success
                     } else {
@@ -720,9 +812,27 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
           if (!questionAddedInBackground) {
             const totalElapsed = Math.round((Date.now() - startTime) / 1000);
             console.warn(`⚠️  [Background] Polling timeout reached after ${totalElapsed}s for session ${session.id}. Questions may not be generated yet.`);
+            // Track generation failure due to timeout
+            mixpanelService.trackQuizQuestionsGenerationFailed({
+              user_id: user.id,
+              session_id: session.id,
+              email: user.email || '',
+              phone: user.phone,
+              subject: subject,
+              error_message: `Polling timeout after ${totalElapsed}s`
+            });
           }
         } catch (error) {
           console.error(`❌ [Background] Fatal error in polling loop for session ${session.id}:`, error);
+          // Track fatal error
+          mixpanelService.trackQuizQuestionsGenerationFailed({
+            user_id: user.id,
+            session_id: session.id,
+            email: user.email || '',
+            phone: user.phone,
+            subject: subject,
+            error_message: error.message
+          });
         }
       })(); // Immediately invoke async function - runs in background
       
@@ -889,6 +999,15 @@ router.post('/start_quiz_clone', validateStartQuizClone, async (req, res) => {
 router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) => {
   try {
     const { name, email, phone, subject, session_id: providedSessionId } = req.body;
+
+    // Track quiz started
+    mixpanelService.trackQuizStarted({
+      email: email || '',
+      phone,
+      name,
+      subject,
+      endpoint: 'start_quiz_clone_v2'
+    });
 
     // Use email as provided (can be empty string or undefined)
     const userEmail = email || '';
@@ -1131,6 +1250,21 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
                       await questionService.createQuestions(questions, session.id, user.id);
                       questionAddedInBackground = true;
                       
+                      // Track questions generated
+                      mixpanelService.trackQuizQuestionsGenerated({
+                        user_id: user.id,
+                        session_id: session.id,
+                        email: user.email || '',
+                        phone: user.phone,
+                        subject: subject,
+                        total_questions: questions.length,
+                        question_types: {
+                          easy: questions.filter(q => q.question_type === 'Easy').length,
+                          medium: questions.filter(q => q.question_type === 'Medium').length,
+                          hard: questions.filter(q => q.question_type === 'Hard').length
+                        }
+                      });
+                      
                       console.log(`✅ [Background] Successfully stored all 10 questions for session ${session.id}!`);
                       break; // Exit polling loop on success
                     } else {
@@ -1165,9 +1299,27 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
           if (!questionAddedInBackground) {
             const totalElapsed = Math.round((Date.now() - startTime) / 1000);
             console.warn(`⚠️  [Background] Polling timeout reached after ${totalElapsed}s for session ${session.id}. Questions may not be generated yet.`);
+            // Track generation failure due to timeout
+            mixpanelService.trackQuizQuestionsGenerationFailed({
+              user_id: user.id,
+              session_id: session.id,
+              email: user.email || '',
+              phone: user.phone,
+              subject: subject,
+              error_message: `Polling timeout after ${totalElapsed}s`
+            });
           }
         } catch (error) {
           console.error(`❌ [Background] Fatal error in polling loop for session ${session.id}:`, error);
+          // Track fatal error
+          mixpanelService.trackQuizQuestionsGenerationFailed({
+            user_id: user.id,
+            session_id: session.id,
+            email: user.email || '',
+            phone: user.phone,
+            subject: subject,
+            error_message: error.message
+          });
         }
       })(); // Immediately invoke async function - runs in background
       
@@ -1351,6 +1503,17 @@ router.post('/start_quiz_clone_v2', validateStartQuizCloneV2, async (req, res) =
 router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) => {
   try {
     const { name, email, phone, subject, list, option, session_id: providedSessionId } = req.body;
+
+    // Track quiz started (subject may be determined later)
+    mixpanelService.trackQuizStarted({
+      email: email || '',
+      phone,
+      name,
+      subject: subject || 'pending',
+      endpoint: 'start_quiz_clone_v3',
+      list,
+      option
+    });
 
     // Use email as provided (can be empty string or undefined)
     const userEmail = email || '';
@@ -1622,6 +1785,21 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
                       await questionService.createQuestions(questions, session.id, user.id);
                       questionAddedInBackground = true;
                       
+                      // Track questions generated
+                      mixpanelService.trackQuizQuestionsGenerated({
+                        user_id: user.id,
+                        session_id: session.id,
+                        email: user.email || '',
+                        phone: user.phone,
+                        subject: subject,
+                        total_questions: questions.length,
+                        question_types: {
+                          easy: questions.filter(q => q.question_type === 'Easy').length,
+                          medium: questions.filter(q => q.question_type === 'Medium').length,
+                          hard: questions.filter(q => q.question_type === 'Hard').length
+                        }
+                      });
+                      
                       console.log(`✅ [Background] Successfully stored all 10 questions for session ${session.id}!`);
                       break; // Exit polling loop on success
                     } else {
@@ -1656,9 +1834,27 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
           if (!questionAddedInBackground) {
             const totalElapsed = Math.round((Date.now() - startTime) / 1000);
             console.warn(`⚠️  [Background] Polling timeout reached after ${totalElapsed}s for session ${session.id}. Questions may not be generated yet.`);
+            // Track generation failure due to timeout
+            mixpanelService.trackQuizQuestionsGenerationFailed({
+              user_id: user.id,
+              session_id: session.id,
+              email: user.email || '',
+              phone: user.phone,
+              subject: subject,
+              error_message: `Polling timeout after ${totalElapsed}s`
+            });
           }
         } catch (error) {
           console.error(`❌ [Background] Fatal error in polling loop for session ${session.id}:`, error);
+          // Track fatal error
+          mixpanelService.trackQuizQuestionsGenerationFailed({
+            user_id: user.id,
+            session_id: session.id,
+            email: user.email || '',
+            phone: user.phone,
+            subject: subject,
+            error_message: error.message
+          });
         }
       })(); // Immediately invoke async function - runs in background
       
@@ -1884,11 +2080,17 @@ router.post('/save_answer', validateSaveAnswer, async (req, res) => {
     
     // First, get the session_id from the question
     const questionQuery = `
-      SELECT session_id FROM questions WHERE id = $1
+      SELECT session_id, question_no FROM questions WHERE id = $1
     `;
     const questionResult = await query(questionQuery, [question_id]);
     
     if (questionResult.rows.length === 0) {
+      // Track error
+      mixpanelService.trackQuizError({
+        endpoint: 'save_answer',
+        error_message: 'Question not found',
+        question_id
+      });
       return res.status(404).json({
         success: false,
         message: 'Question not found'
@@ -1896,10 +2098,30 @@ router.post('/save_answer', validateSaveAnswer, async (req, res) => {
     }
     
     const session_id = questionResult.rows[0].session_id;
+    const question_no = questionResult.rows[0].question_no;
     console.log(`📝 Found session_id: ${session_id} for question: ${question_id}`);
     
     // Save answer and get next question
     const result = await questionService.saveAnswerAndGetNext(question_id, answer, session_id);
+    
+    // Track answer saved
+    mixpanelService.trackAnswerSaved({
+      question_id,
+      session_id,
+      question_number: question_no,
+      answer,
+      total_questions: result.total_questions || 0
+    });
+
+    // Track next question retrieved if available
+    if (result.status === 'pending' && result.question_id) {
+      mixpanelService.trackNextQuestionRetrieved({
+        question_id: result.question_id,
+        session_id,
+        question_number: result.question_no || 0,
+        total_questions: result.total_questions || 0
+      });
+    }
     
     res.status(200).json({
       success: true,
@@ -1909,6 +2131,13 @@ router.post('/save_answer', validateSaveAnswer, async (req, res) => {
     
   } catch (error) {
     console.error('Error in save_answer endpoint:', error);
+    
+    // Track error
+    mixpanelService.trackQuizError({
+      endpoint: 'save_answer',
+      error_message: error.message,
+      question_id: req.body?.question_id
+    });
     
     if (error.message.includes('not found') || error.message.includes('mismatch')) {
       return res.status(404).json({
@@ -2054,6 +2283,16 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
   try {
     const { name, email, phone, certified_user_skill_id } = req.body;
     
+    // Track quiz submitted
+    mixpanelService.trackQuizSubmitted({
+      email,
+      phone,
+      name,
+      certified_user_skill_id,
+      submission_type: 'manual',
+      endpoint: 'submit_quiz_response'
+    });
+    
     // Use shared function for quiz response submission
     const result = await handleQuizResponseSubmission({
       name, email, phone, certified_user_skill_id
@@ -2063,6 +2302,15 @@ router.post('/submit_quiz_response', validateQuizResponse, async (req, res) => {
     
   } catch (error) {
     console.error('Error in submit_quiz_response endpoint:', error);
+    
+    // Track submission failure
+    mixpanelService.trackQuizSubmissionFailed({
+      email: req.body?.email,
+      phone: req.body?.phone,
+      certified_user_skill_id: req.body?.certified_user_skill_id,
+      error_message: error.message,
+      endpoint: 'submit_quiz_response'
+    });
     
     if (error.message.includes('not found')) {
       return res.status(404).json({
@@ -2267,6 +2515,17 @@ router.post('/auto_submit_quiz', async (req, res) => {
     
     console.log('📤 Auto-submitting with user data:', userData);
     
+    // Track quiz auto submitted
+    mixpanelService.trackQuizAutoSubmitted({
+      email: sessionData.email,
+      phone: sessionData.phone,
+      name: sessionData.name,
+      subject: sessionData.subject,
+      session_id: sessionData.id,
+      certified_user_skill_id: sessionData.certified_user_id,
+      endpoint: 'auto_submit_quiz'
+    });
+    
     // Use shared function for quiz response submission (encapsulates /api/submit_quiz_response logic)
     const result = await handleQuizResponseSubmission(userData);
     
@@ -2275,6 +2534,14 @@ router.post('/auto_submit_quiz', async (req, res) => {
     
   } catch (error) {
     console.error('Error in auto_submit_quiz endpoint:', error);
+    
+    // Track submission failure
+    mixpanelService.trackQuizSubmissionFailed({
+      phone: req.body?.phone,
+      subject: req.body?.subject,
+      error_message: error.message,
+      endpoint: 'auto_submit_quiz'
+    });
     
     if (error.message.includes('not found')) {
       return res.status(404).json({
@@ -2524,6 +2791,20 @@ router.post('/auto_submit_quiz_v2', async (req, res) => {
     
     console.log('📤 Auto-submitting with user data:', userData);
     
+    // Track quiz auto submitted
+    mixpanelService.trackQuizAutoSubmitted({
+      email: sessionData.email,
+      phone: sessionData.phone,
+      name: sessionData.name,
+      subject: sessionData.subject,
+      session_id: sessionData.id,
+      user_id: sessionData.user_id,
+      certified_user_skill_id: sessionData.certified_user_id,
+      endpoint: 'auto_submit_quiz_v2',
+      type: typeStr,
+      email_updated: typeStr === "1"
+    });
+    
     // Use shared function for quiz response submission (encapsulates /api/submit_quiz_response logic)
     const result = await handleQuizResponseSubmission(userData);
     
@@ -2532,6 +2813,439 @@ router.post('/auto_submit_quiz_v2', async (req, res) => {
     
   } catch (error) {
     console.error('Error in auto_submit_quiz_v2 endpoint:', error);
+    
+    // Track submission failure
+    mixpanelService.trackQuizSubmissionFailed({
+      phone: req.body?.phone,
+      subject: req.body?.subject,
+      email: req.body?.email,
+      type: req.body?.type,
+      error_message: error.message,
+      endpoint: 'auto_submit_quiz_v2'
+    });
+    
+    if (error.message.includes('not found')) {
+      return res.status(404).json({
+        result: "failed",
+        message: error.message
+      });
+    }
+    
+    res.status(500).json({
+      result: "failed",
+      message: 'Internal server error',
+      error: error.message,
+      ...(process.env.NODE_ENV === 'development' && { details: error.stack })
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auto_submit_quiz_v3:
+ *   post:
+ *     summary: Automatically submit quiz response using phone and subject (v3 with existing token)
+ *     description: Same as /api/auto_submit_quiz_v2 but uses existing certified_token from sessions table instead of calling Continue API. Create V2 Test API is not called.
+ *     tags: [Quiz]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *               - subject
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 description: User's phone number to find the session
+ *                 example: "918007880283"
+ *               subject:
+ *                 type: string
+ *                 description: Subject/course name to find the session
+ *                 example: "Java"
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 description: Email address to update (required if type is "1")
+ *                 example: "newemail@example.com"
+ *               type:
+ *                 type: string
+ *                 enum: ["1", "2"]
+ *                 description: Type "1" = update user email before submission, Type "2" = normal flow (no email update)
+ *                 example: "1"
+ *           examples:
+ *             with_email_update:
+ *               summary: Update email before submission (type "1")
+ *               value:
+ *                 phone: "918007880283"
+ *                 subject: "Java"
+ *                 email: "newemail@example.com"
+ *                 type: "1"
+ *             normal_flow:
+ *               summary: Normal flow without email update (type "2")
+ *               value:
+ *                 phone: "918007880283"
+ *                 subject: "Java"
+ *                 type: "2"
+ *     responses:
+ *       200:
+ *         description: "Quiz auto-submitted successfully - Returns response with certified_token and order_id null"
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: string
+ *                   enum: ["true_high_100", "true_high_90", "true_high_80", "true_high_70", "true_pass", "true_low"]
+ *                   example: "true_high_80"
+ *                   description: "true_high_100 (score 100), true_high_90 (score 90), true_high_80 (score 80), true_high_70 (score 70), true_pass (score 50-60), true_low (score 0-40)"
+ *                 message:
+ *                   type: string
+ *                   example: "Quiz response submitted successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     user:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         name:
+ *                           type: string
+ *                         email:
+ *                           type: string
+ *                         phone:
+ *                           type: string
+ *                     session:
+ *                       type: object
+ *                       properties:
+ *                         id:
+ *                           type: string
+ *                           format: uuid
+ *                         certified_skill_id:
+ *                           type: integer
+ *                         certified_token:
+ *                           type: string
+ *                           description: Token from sessions table (originally from Continue API)
+ *                           example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                         order_id:
+ *                           type: null
+ *                           description: Always null (Create V2 Test API not called)
+ *                     quiz_attempt:
+ *                       type: array
+ *                       description: Array of quiz questions with user answers
+ *                     quiz_results:
+ *                       type: object
+ *                       properties:
+ *                         score:
+ *                           type: integer
+ *                           description: Quiz score out of 100
+ *                           example: 80
+ *                         correct_answers:
+ *                           type: integer
+ *                           description: Number of correct answers
+ *                           example: 8
+ *                         total_questions:
+ *                           type: integer
+ *                           description: Total number of questions
+ *                           example: 10
+ *                         completion_time_seconds:
+ *                           type: integer
+ *                           description: Time taken to complete quiz in seconds
+ *                           example: 300
+ *                     score:
+ *                       type: integer
+ *                       description: Quiz score out of 100 (direct access)
+ *                       example: 80
+ *       400:
+ *         description: Validation error, bad request, or missing certified_token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result:
+ *                   type: string
+ *                   example: "failed"
+ *                 message:
+ *                   type: string
+ *                   example: "No certified token found in session"
+ *       404:
+ *         description: Session not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result:
+ *                   type: string
+ *                   example: "failed"
+ *                 message:
+ *                   type: string
+ *                   example: "No active session found for this phone and subject"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 result:
+ *                   type: string
+ *                   example: "failed"
+ *                 message:
+ *                   type: string
+ *                   example: "Internal server error"
+ */
+router.post('/auto_submit_quiz_v3', async (req, res) => {
+  try {
+    const { phone, subject, email, type } = req.body;
+    
+    if (!phone || !subject) {
+      return res.status(400).json({
+        result: "failed",
+        message: "Phone and subject are required"
+      });
+    }
+    
+    // Validate type if provided (accept string "1" or "2")
+    if (type !== undefined && type !== "1" && type !== "2" && type !== 1 && type !== 2) {
+      return res.status(400).json({
+        result: "failed",
+        message: "Type must be \"1\" or \"2\""
+      });
+    }
+    
+    // Normalize type to string for consistent comparison
+    const typeStr = String(type);
+    
+    // If type is "1", email is required
+    if (typeStr === "1" && (!email || email.trim() === '')) {
+      return res.status(400).json({
+        result: "failed",
+        message: "Email is required when type is \"1\""
+      });
+    }
+    
+    // If type is "1", validate email format
+    if (typeStr === "1" && email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          result: "failed",
+          message: "Please provide a valid email address"
+        });
+      }
+    }
+    
+    console.log('🤖 Auto-submitting quiz v3 for phone:', phone, 'subject:', subject, 'type:', type);
+    
+    // Get session and user data from database using phone and subject, including certified_token
+    const sessionQuery = `
+      SELECT s.*, u.id as user_id, u.name, u.email, u.phone, u.subject, s.certified_token
+      FROM sessions s
+      JOIN users u ON s.user_id = u.id
+      WHERE u.phone = $1 AND u.subject = $2
+      ORDER BY s.created_at DESC
+      LIMIT 1
+    `;
+    
+    const sessionResult = await query(sessionQuery, [phone, subject]);
+    
+    if (sessionResult.rows.length === 0) {
+      // Debug: Check if user exists but has no session
+      const userCheckQuery = `
+        SELECT id, name, email, phone, subject, created_at
+        FROM users
+        WHERE phone = $1 AND subject = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const userCheckResult = await query(userCheckQuery, [phone, subject]);
+      
+      if (userCheckResult.rows.length === 0) {
+        console.log('❌ No user found for phone:', phone, 'subject:', subject);
+        return res.status(404).json({
+          result: "failed",
+          message: "No user found for this phone and subject. Please start a quiz session first."
+        });
+      } else {
+        console.log('⚠️ User found but no session exists for phone:', phone, 'subject:', subject);
+        return res.status(404).json({
+          result: "failed",
+          message: "No active session found for this phone and subject. Please start a quiz session first."
+        });
+      }
+    }
+    
+    const sessionData = sessionResult.rows[0];
+    console.log('📊 Found session data:', {
+      session_id: sessionData.id,
+      user_id: sessionData.user_id,
+      user_name: sessionData.name,
+      user_email: sessionData.email,
+      user_phone: sessionData.phone,
+      user_subject: sessionData.subject,
+      certified_user_id: sessionData.certified_user_id,
+      has_certified_token: !!sessionData.certified_token
+    });
+    
+    // Validate that certified_token exists
+    if (!sessionData.certified_token || sessionData.certified_token.trim() === '') {
+      return res.status(400).json({
+        result: "failed",
+        message: "No certified token found in session"
+      });
+    }
+    
+    // If type is "1", update user email
+    if (typeStr === "1" && email) {
+      console.log('📧 Updating user email from', sessionData.email, 'to', email);
+      
+      const updateEmailQuery = `
+        UPDATE users 
+        SET email = $1, updated_at = NOW()
+        WHERE id = $2
+        RETURNING id, name, email, phone, subject, created_at
+      `;
+      
+      const updateResult = await query(updateEmailQuery, [email, sessionData.user_id]);
+      
+      if (updateResult.rows.length === 0) {
+        return res.status(404).json({
+          result: "failed",
+          message: "User not found for email update"
+        });
+      }
+      
+      // Update sessionData with new email
+      sessionData.email = email;
+      console.log('✅ User email updated successfully');
+    }
+    
+    // Prepare user data for quiz response service
+    const userData = {
+      name: sessionData.name,
+      email: sessionData.email,
+      phone: sessionData.phone.startsWith('+') ? sessionData.phone : `+${sessionData.phone}`,
+      certified_user_skill_id: sessionData.certified_user_id
+    };
+    
+    console.log('📤 Auto-submitting with user data:', userData);
+    
+    // Track quiz auto submitted
+    mixpanelService.trackQuizAutoSubmitted({
+      email: sessionData.email,
+      phone: sessionData.phone,
+      name: sessionData.name,
+      subject: sessionData.subject,
+      session_id: sessionData.id,
+      user_id: sessionData.user_id,
+      certified_user_skill_id: sessionData.certified_user_id,
+      endpoint: 'auto_submit_quiz_v3',
+      type: typeStr,
+      email_updated: typeStr === "1"
+    });
+    
+    // Call service method with existing token
+    const result = await quizResponseService.submitQuizResponseWithToken(
+      userData,
+      sessionData.certified_token
+    );
+    
+    console.log('🔍 Raw service result:', JSON.stringify(result, null, 2));
+    
+    // Check if result has data and if it's not empty
+    if (!result.data || Object.keys(result.data).length === 0) {
+      console.error('❌ Service returned empty data object');
+      // Track submission failure
+      mixpanelService.trackQuizSubmissionFailed({
+        email: sessionData.email,
+        phone: sessionData.phone,
+        certified_user_skill_id: sessionData.certified_user_id,
+        error_message: 'Service returned empty data',
+        endpoint: 'auto_submit_quiz_v3'
+      });
+      throw new Error('Service returned empty data - check service logs');
+    }
+    
+    // Get the score to determine success level
+    const score = result.data.quiz_results?.score || 0;
+    // Categorize score per new rules:
+    // 100 => true_high_100, 90 => true_high_90, 80 => true_high_80, 70 => true_high_70
+    // 50-60 => true_pass, 0-40 => true_low
+    let successValue = 'true_low'; // Default fallback
+    if (score === 100) {
+      successValue = 'true_high_100';
+    } else if (score === 90) {
+      successValue = 'true_high_90';
+    } else if (score === 80) {
+      successValue = 'true_high_80';
+    } else if (score === 70) {
+      successValue = 'true_high_70';
+    } else if (score >= 50 && score <= 60) {
+      successValue = 'true_pass';
+    } else if (score >= 0 && score <= 40) {
+      successValue = 'true_low';
+    }
+    
+    // Track quiz scored
+    mixpanelService.trackQuizScored({
+      user_id: result.data.user?.id,
+      session_id: result.data.session?.id,
+      email: sessionData.email,
+      phone: sessionData.phone,
+      score,
+      score_category: successValue,
+      correct_answers: result.data.quiz_results?.correct_answers || 0,
+      total_questions: result.data.quiz_results?.total_questions || 0,
+      certified_user_skill_id: sessionData.certified_user_id
+    });
+    
+    // Format response to match the exact structure (with certified_token, without token_updated)
+    const formattedResponse = {
+      success: successValue,
+      message: "Quiz response submitted successfully",
+      data: {
+        user: {
+          id: result.data.user.id,
+          name: result.data.user.name,
+          email: result.data.user.email,
+          phone: result.data.user.phone
+        },
+        session: {
+          id: result.data.session.id,
+          certified_skill_id: result.data.session.certified_user_id,
+          certified_token: result.data.session.certified_token,
+          order_id: result.data.session.order_id
+        },
+        quiz_attempt: result.data.quiz_attempt || {},
+        quiz_results: result.data.quiz_results || {},
+        score: score
+      }
+    };
+    
+    console.log('📤 Formatted response:', JSON.stringify(formattedResponse, null, 2));
+    
+    // Return the formatted response
+    res.status(200).json(formattedResponse);
+    
+  } catch (error) {
+    console.error('Error in auto_submit_quiz_v3 endpoint:', error);
+    
+    // Track submission failure
+    mixpanelService.trackQuizSubmissionFailed({
+      phone: req.body?.phone,
+      subject: req.body?.subject,
+      email: req.body?.email,
+      type: req.body?.type,
+      error_message: error.message,
+      endpoint: 'auto_submit_quiz_v3'
+    });
     
     if (error.message.includes('not found')) {
       return res.status(404).json({
@@ -2664,6 +3378,355 @@ router.get('/export_hr_management_data', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to export HR Management data',
+      error: error.message,
+      ...(process.env.NODE_ENV === 'development' && { details: error.stack })
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/export-all-sessions:
+ *   get:
+ *     summary: Export all sessions with user details
+ *     description: Fetches all sessions from the sessions table along with user details (name, phone, email) from the users table and exports as CSV
+ *     tags: [Admin]
+ *     responses:
+ *       200:
+ *         description: Sessions exported successfully as CSV
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *             example: |
+ *               session_id,user_id,user_name,user_email,user_phone,subject,certified_user_id,certified_token,token_expires_at,quiz_completed,quiz_analysis_generated,order_id,created_at
+ *               "uuid-1","user-uuid-1","John Doe","john@example.com","+1234567890","Java",1771031,"token123","2024-01-01T01:00:00.000Z",true,true,739568,"2024-01-01T00:00:00.000Z"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+router.get('/export-all-sessions', async (req, res) => {
+  try {
+    console.log('📊 Exporting all sessions with user details...');
+
+    // Query to fetch all sessions with user details
+    const exportQuery = `
+      SELECT 
+        s.id as session_id,
+        s.user_id,
+        u.name as user_name,
+        u.email as user_email,
+        u.phone as user_phone,
+        s.subject,
+        s.certified_user_id,
+        s.certified_token,
+        s.certified_token_expires_at,
+        s.quiz_completed,
+        s.quiz_analysis_generated,
+        s.order_id,
+        s.created_at
+      FROM sessions s
+      INNER JOIN users u ON s.user_id = u.id
+      ORDER BY s.created_at DESC
+    `;
+
+    const result = await query(exportQuery);
+    const rows = result.rows;
+
+    console.log(`✅ Found ${rows.length} sessions to export`);
+
+    // Build CSV
+    const csvRows = [];
+    
+    // CSV Header
+    csvRows.push('session_id,user_id,user_name,user_email,user_phone,subject,certified_user_id,certified_token,token_expires_at,quiz_completed,quiz_analysis_generated,order_id,created_at');
+    
+    // CSV Data Rows
+    for (const row of rows) {
+      const sessionId = (row.session_id || '').replace(/"/g, '""');
+      const userId = (row.user_id || '').replace(/"/g, '""');
+      const userName = (row.user_name || '').replace(/"/g, '""');
+      const userEmail = (row.user_email || '').replace(/"/g, '""');
+      const userPhone = (row.user_phone || '').replace(/"/g, '""');
+      const subject = (row.subject || '').replace(/"/g, '""');
+      const certifiedUserId = row.certified_user_id || '';
+      const certifiedToken = (row.certified_token || '').replace(/"/g, '""');
+      
+      // Convert timestamps from UTC to IST and format as ISO string with IST offset
+      let tokenExpiresAt = '';
+      if (row.certified_token_expires_at) {
+        const utcDate = new Date(row.certified_token_expires_at);
+        const istDate = toIST(utcDate);
+        // Format as ISO string with IST timezone offset (+05:30)
+        const year = istDate.getUTCFullYear();
+        const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(istDate.getUTCDate()).padStart(2, '0');
+        const hours = String(istDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
+        const milliseconds = String(istDate.getUTCMilliseconds()).padStart(3, '0');
+        tokenExpiresAt = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+05:30`;
+      }
+      
+      let createdAt = '';
+      if (row.created_at) {
+        const utcDate = new Date(row.created_at);
+        const istDate = toIST(utcDate);
+        // Format as ISO string with IST timezone offset (+05:30)
+        const year = istDate.getUTCFullYear();
+        const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(istDate.getUTCDate()).padStart(2, '0');
+        const hours = String(istDate.getUTCHours()).padStart(2, '0');
+        const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
+        const milliseconds = String(istDate.getUTCMilliseconds()).padStart(3, '0');
+        createdAt = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+05:30`;
+      }
+      
+      const quizCompleted = row.quiz_completed ? 'true' : 'false';
+      const quizAnalysisGenerated = row.quiz_analysis_generated ? 'true' : 'false';
+      const orderId = row.order_id || '';
+      
+      csvRows.push(
+        `"${sessionId}","${userId}","${userName}","${userEmail}","${userPhone}","${subject}","${certifiedUserId}","${certifiedToken}","${tokenExpiresAt}","${quizCompleted}","${quizAnalysisGenerated}","${orderId}","${createdAt}"`
+      );
+    }
+    
+    const csvContent = csvRows.join('\n');
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="all_sessions_export_${new Date().toISOString().split('T')[0]}.csv"`);
+    return res.status(200).send(csvContent);
+    
+  } catch (error) {
+    console.error('❌ Error exporting all sessions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export sessions',
+      error: error.message,
+      ...(process.env.NODE_ENV === 'development' && { details: error.stack })
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/migrate-session-timestamps-to-ist:
+ *   post:
+ *     summary: Migrate session timestamps from UTC to IST
+ *     description: Converts all session created_at, session_created, and certified_token_expires_at timestamps from UTC to IST (Indian Standard Time, UTC+5:30). This is a one-time migration endpoint.
+ *     tags: [Admin]
+ *     parameters:
+ *       - in: query
+ *         name: dry_run
+ *         schema:
+ *           type: boolean
+ *           default: false
+ *         description: If true, preview changes without updating the database
+ *     responses:
+ *       200:
+ *         description: Migration completed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Migration completed successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     total_sessions:
+ *                       type: integer
+ *                       description: Total number of sessions found
+ *                       example: 100
+ *                     updated_sessions:
+ *                       type: integer
+ *                       description: Number of sessions successfully updated
+ *                       example: 98
+ *                     failed_sessions:
+ *                       type: integer
+ *                       description: Number of sessions that failed to update
+ *                       example: 2
+ *                     dry_run:
+ *                       type: boolean
+ *                       description: Whether this was a dry run (no actual updates)
+ *                       example: false
+ *             examples:
+ *               success:
+ *                 summary: Successful migration
+ *                 value:
+ *                   success: true
+ *                   message: "Migration completed successfully"
+ *                   data:
+ *                     total_sessions: 100
+ *                     updated_sessions: 98
+ *                     failed_sessions: 2
+ *                     dry_run: false
+ *               dry_run:
+ *                 summary: Dry run preview
+ *                 value:
+ *                   success: true
+ *                   message: "Dry run completed - no changes made"
+ *                   data:
+ *                     total_sessions: 100
+ *                     updated_sessions: 0
+ *                     failed_sessions: 0
+ *                     dry_run: true
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Migration failed"
+ *                 error:
+ *                   type: string
+ */
+// Handle OPTIONS preflight for migration endpoint
+router.options('/migrate-session-timestamps-to-ist', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.status(200).end();
+});
+
+router.post('/migrate-session-timestamps-to-ist', async (req, res) => {
+  // Set CORS headers explicitly
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  
+  try {
+    const dryRun = req.query.dry_run === 'true' || req.query.dry_run === true;
+    
+    console.log(`🔄 Starting session timestamp migration to IST (dry_run: ${dryRun})...`);
+    
+    // Fetch all sessions
+    const fetchSessionsQuery = `
+      SELECT id, created_at, session_created, certified_token_expires_at, user_id
+      FROM sessions
+      ORDER BY created_at ASC
+    `;
+    
+    const sessionsResult = await query(fetchSessionsQuery);
+    const sessions = sessionsResult.rows;
+    
+    console.log(`📊 Found ${sessions.length} sessions to process`);
+    
+    let updatedCount = 0;
+    let failedCount = 0;
+    const errors = [];
+    
+    // Process each session
+    for (const session of sessions) {
+      try {
+        // Get current timestamps
+        const currentCreatedAt = session.created_at;
+        const currentSessionCreated = session.session_created;
+        const currentTokenExpiresAt = session.certified_token_expires_at;
+        
+        // Convert from UTC to IST (add 5 hours 30 minutes)
+        // PostgreSQL handles timezone conversion
+        // We'll use AT TIME ZONE to convert UTC to IST
+        const updateQuery = `
+          UPDATE sessions
+          SET 
+            created_at = (created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata'),
+            session_created = (
+              CASE 
+                WHEN session_created IS NOT NULL 
+                THEN (session_created AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')
+                ELSE NULL
+              END
+            ),
+            certified_token_expires_at = (
+              CASE 
+                WHEN certified_token_expires_at IS NOT NULL 
+                THEN (certified_token_expires_at AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Kolkata')
+                ELSE NULL
+              END
+            )
+          WHERE id = $1
+          RETURNING id, created_at, session_created, certified_token_expires_at
+        `;
+        
+        if (!dryRun) {
+          const updateResult = await query(updateQuery, [session.id]);
+          
+          if (updateResult.rows.length > 0) {
+            updatedCount++;
+            console.log(`✅ Updated session ${session.id}:`);
+            console.log(`   created_at: ${currentCreatedAt} → ${updateResult.rows[0].created_at}`);
+            if (currentSessionCreated) {
+              console.log(`   session_created: ${currentSessionCreated} → ${updateResult.rows[0].session_created}`);
+            }
+            if (currentTokenExpiresAt) {
+              console.log(`   certified_token_expires_at: ${currentTokenExpiresAt} → ${updateResult.rows[0].certified_token_expires_at}`);
+            }
+          } else {
+            failedCount++;
+            errors.push(`Session ${session.id}: Update returned no rows`);
+          }
+        } else {
+          // Dry run - just simulate
+          updatedCount++;
+          console.log(`[DRY RUN] Would update session ${session.id}:`);
+          console.log(`   created_at: ${currentCreatedAt} → IST`);
+          if (currentSessionCreated) {
+            console.log(`   session_created: ${currentSessionCreated} → IST`);
+          }
+          if (currentTokenExpiresAt) {
+            console.log(`   certified_token_expires_at: ${currentTokenExpiresAt} → IST`);
+          }
+        }
+      } catch (error) {
+        failedCount++;
+        const errorMsg = `Session ${session.id}: ${error.message}`;
+        errors.push(errorMsg);
+        console.error(`❌ Error updating session ${session.id}:`, error.message);
+      }
+    }
+    
+    const response = {
+      success: true,
+      message: dryRun 
+        ? `Dry run completed - ${updatedCount} sessions would be updated` 
+        : `Migration completed successfully`,
+      data: {
+        total_sessions: sessions.length,
+        updated_sessions: updatedCount,
+        failed_sessions: failedCount,
+        dry_run: dryRun
+      }
+    };
+    
+    if (errors.length > 0 && process.env.NODE_ENV === 'development') {
+      response.data.errors = errors.slice(0, 10); // Limit errors in response
+    }
+    
+    console.log(`✅ Migration complete: ${updatedCount} updated, ${failedCount} failed`);
+    
+    res.status(200).json(response);
+    
+  } catch (error) {
+    console.error('❌ Error in migration endpoint:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Migration failed',
       error: error.message,
       ...(process.env.NODE_ENV === 'development' && { details: error.stack })
     });
