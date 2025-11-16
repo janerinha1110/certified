@@ -11,6 +11,7 @@ Express.js server with Supabase integration for quiz management system.
 - 🔐 External API integrations
 - ✅ Input validation
 - 🔄 Retry logic with exponential backoff
+- 📊 Mixpanel event tracking for funnel analysis
 
 ## API Endpoints
 
@@ -48,6 +49,9 @@ CONTINUE_API_URL=https://certified-new.learntube.ai/continue
 SAVE_USER_RESPONSE_URL=https://certified-new.learntube.ai/save_user_response
 CERTIFICATE_CLAIM_URL=https://certified-new.learntube.ai/certified_user_skill/claim_available_certificate
 ANALYSIS_API_URL=https://certified-new.learntube.ai/analysis
+
+# Mixpanel Analytics (Optional)
+MIXPANEL_PROJECT_TOKEN=37d3601624914c5ec3dbda9b4ae30733
 ```
 
 ## Local Development
@@ -100,6 +104,7 @@ npm start
    - `SAVE_USER_RESPONSE_URL` = `https://certified-new.learntube.ai/save_user_response`
    - `CERTIFICATE_CLAIM_URL` = `https://certified-new.learntube.ai/certified_user_skill/claim_available_certificate`
    - `ANALYSIS_API_URL` = `https://certified-new.learntube.ai/analysis`
+   - `MIXPANEL_PROJECT_TOKEN` = `37d3601624914c5ec3dbda9b4ae30733` (optional, for analytics)
 
 4. **Deploy:**
    - Click "Deploy" in Vercel dashboard
@@ -153,6 +158,46 @@ The project includes a `vercel.json` file with:
 ## API Documentation
 
 Once deployed, visit `https://your-domain.vercel.app/api-docs` for interactive Swagger documentation.
+
+## Mixpanel Analytics
+
+The application includes comprehensive Mixpanel event tracking to monitor the complete quiz user journey. All events are tracked automatically and include relevant user and session data.
+
+### Setup
+
+1. **Get Mixpanel Project Token:**
+   - Log in to your [Mixpanel account](https://mixpanel.com)
+   - Go to Project Settings → Project Details
+   - Copy your Project Token
+
+2. **Set Environment Variable:**
+   ```bash
+   MIXPANEL_PROJECT_TOKEN=37d3601624914c5ec3dbda9b4ae30733
+   ```
+   
+   Or add it to your `.env` file (see `.env.example` for reference).
+
+3. **Verify Tracking:**
+   - Check Mixpanel Live View to see events in real-time
+   - Events should appear within seconds of API calls
+
+### Event Tracking
+
+The application tracks the following events throughout the quiz funnel:
+- **Quiz Started** - When a user initiates a quiz
+- **Quiz Questions Generated** - When questions are successfully generated
+- **Answer Saved** - Each time a user saves an answer
+- **Next Question Retrieved** - When the next question is fetched
+- **Quiz Submitted** - When a quiz is manually submitted
+- **Quiz Auto Submitted** - When a quiz is auto-submitted
+- **Quiz Scored** - When a quiz is scored with score category
+- **Error Events** - For tracking failures and errors
+
+### Event Reference
+
+See [MIXPANEL_EVENTS.md](./MIXPANEL_EVENTS.md) for complete documentation of all events, properties, and funnel analysis setup.
+
+**Note:** Mixpanel tracking is optional. If `MIXPANEL_PROJECT_TOKEN` is not set, the application will continue to function normally without tracking.
 
 ## Testing
 

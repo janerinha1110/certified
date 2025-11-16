@@ -3207,6 +3207,21 @@ router.post('/auto_submit_quiz_v3', async (req, res) => {
     });
     
     // Format response to match the exact structure (with certified_token, without token_updated)
+    // Convert created_at from UTC to IST
+    let createdAtIST = '';
+    if (sessionData.created_at) {
+      const utcDate = new Date(sessionData.created_at);
+      const istDate = toIST(utcDate);
+      // Format as YYYY-MM-DD HH:mm:ss IST
+      const year = istDate.getUTCFullYear();
+      const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(istDate.getUTCDate()).padStart(2, '0');
+      const hours = String(istDate.getUTCHours()).padStart(2, '0');
+      const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
+      const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
+      createdAtIST = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} IST`;
+    }
+    
     const formattedResponse = {
       success: successValue,
       message: "Quiz response submitted successfully",
@@ -3221,7 +3236,8 @@ router.post('/auto_submit_quiz_v3', async (req, res) => {
           id: result.data.session.id,
           certified_skill_id: result.data.session.certified_user_id,
           certified_token: result.data.session.certified_token,
-          order_id: result.data.session.order_id
+          order_id: result.data.session.order_id,
+          created_at: createdAtIST
         },
         quiz_attempt: result.data.quiz_attempt || {},
         quiz_results: result.data.quiz_results || {},
@@ -3455,35 +3471,44 @@ router.get('/export-all-sessions', async (req, res) => {
       const certifiedUserId = row.certified_user_id || '';
       const certifiedToken = (row.certified_token || '').replace(/"/g, '""');
       
-      // Convert timestamps from UTC to IST and format as ISO string with IST offset
+      // Convert timestamps from UTC to IST by adding 5.5 hours and format as YYYY-MM-DD HH:mm:ss IST
       let tokenExpiresAt = '';
       if (row.certified_token_expires_at) {
         const utcDate = new Date(row.certified_token_expires_at);
         const istDate = toIST(utcDate);
-        // Format as ISO string with IST timezone offset (+05:30)
+        // Format as YYYY-MM-DD HH:mm:ss IST (time already adjusted to IST)
         const year = istDate.getUTCFullYear();
         const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
         const day = String(istDate.getUTCDate()).padStart(2, '0');
         const hours = String(istDate.getUTCHours()).padStart(2, '0');
         const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
         const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
-        const milliseconds = String(istDate.getUTCMilliseconds()).padStart(3, '0');
-        tokenExpiresAt = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+05:30`;
+        tokenExpiresAt = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} IST`;
       }
       
+      // Convert created_at from UTC to IST by adding 5.5 hours and format as YYYY-MM-DD HH:mm:ss IST
       let createdAt = '';
       if (row.created_at) {
-        const utcDate = new Date(row.created_at);
-        const istDate = toIST(utcDate);
-        // Format as ISO string with IST timezone offset (+05:30)
-        const year = istDate.getUTCFullYear();
-        const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
-        const day = String(istDate.getUTCDate()).padStart(2, '0');
-        const hours = String(istDate.getUTCHours()).padStart(2, '0');
-        const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
-        const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
-        const milliseconds = String(istDate.getUTCMilliseconds()).padStart(3, '0');
-        createdAt = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${milliseconds}+05:30`;
+        try {
+          const utcDate = new Date(row.created_at);
+          if (!isNaN(utcDate.getTime())) {
+            const istDate = toIST(utcDate);
+            // Format as YYYY-MM-DD HH:mm:ss IST (time already adjusted to IST)
+            const year = istDate.getUTCFullYear();
+            const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(istDate.getUTCDate()).padStart(2, '0');
+            const hours = String(istDate.getUTCHours()).padStart(2, '0');
+            const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
+            const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
+            createdAt = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} IST`;
+          } else {
+            console.warn('Invalid created_at date:', row.created_at);
+            createdAt = row.created_at ? String(row.created_at) : '';
+          }
+        } catch (error) {
+          console.error('Error converting created_at to IST:', error, 'Value:', row.created_at);
+          createdAt = row.created_at ? String(row.created_at) : '';
+        }
       }
       
       const quizCompleted = row.quiz_completed ? 'true' : 'false';

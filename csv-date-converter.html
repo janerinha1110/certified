@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Date Converter - UTC to IST</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            background: #f8f9ff;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            background: #f0f2ff;
+        }
+
+        .upload-area.dragover {
+            border-color: #764ba2;
+            background: #e8ebff;
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .upload-text {
+            color: #667eea;
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .upload-hint {
+            color: #999;
+            font-size: 13px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 15px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            margin-left: 10px;
+        }
+
+        .btn-secondary:hover {
+            box-shadow: 0 8px 20px rgba(108, 117, 125, 0.4);
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #1976D2;
+        }
+
+        .preview {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .preview.active {
+            display: block;
+        }
+
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .preview-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            background: #f8f9fa;
+            padding: 12px 16px;
+            border-radius: 8px;
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            font-size: 13px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 500;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        tbody tr:hover {
+            background: #f8f9ff;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .error {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .error.active {
+            display: block;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .upload-area {
+                padding: 30px 20px;
+            }
+
+            table {
+                font-size: 11px;
+            }
+
+            th, td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📅 CSV Date Converter</h1>
+        <p class="subtitle">Convert UTC timestamps to IST and extract dates</p>
+
+        <div class="info-box">
+            <strong>Instructions:</strong> Upload a CSV file with a "created_at" column in UTC format. 
+            The app will convert it to IST and create a new "date" column in dd-mm-yyyy format.
+        </div>
+
+        <div class="upload-area" id="uploadArea">
+            <div class="upload-icon">📁</div>
+            <div class="upload-text">Click to upload or drag and drop</div>
+            <div class="upload-hint">CSV files only</div>
+            <input type="file" id="fileInput" accept=".csv" />
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <div>Processing CSV...</div>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="preview" id="preview">
+            <div class="preview-header">
+                <div class="preview-title">Preview</div>
+                <div>
+                    <button class="btn" id="downloadBtn">Download CSV</button>
+                    <button class="btn btn-secondary" id="resetBtn">Reset</button>
+                </div>
+            </div>
+
+            <div class="stats" id="stats"></div>
+
+            <div style="overflow-x: auto;">
+                <table id="previewTable">
+                    <thead id="tableHead"></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const preview = document.getElementById('preview');
+        const previewTable = document.getElementById('previewTable');
+        const tableHead = document.getElementById('tableHead');
+        const tableBody = document.getElementById('tableBody');
+        const stats = document.getElementById('stats');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        let processedData = null;
+        let csvContent = null;
+
+        // Upload area click
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        // File input change
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        });
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                processFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // Reset button
+        resetBtn.addEventListener('click', () => {
+            fileInput.value = '';
+            preview.classList.remove('active');
+            loading.classList.remove('active');
+            error.classList.remove('active');
+            processedData = null;
+            csvContent = null;
+        });
+
+        // Download button
+        downloadBtn.addEventListener('click', () => {
+            if (csvContent) {
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'converted_dates.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        });
+
+        function showError(message) {
+            error.textContent = message;
+            error.classList.add('active');
+            loading.classList.remove('active');
+        }
+
+        function hideError() {
+            error.classList.remove('active');
+        }
+
+        function convertUTCtoIST(utcString) {
+            try {
+                // Parse the UTC date string
+                const date = new Date(utcString);
+                
+                // Check if date is valid
+                if (isNaN(date.getTime())) {
+                    return { ist: 'Invalid Date', date: 'Invalid Date' };
+                }
+
+                // Convert to IST (UTC+5:30)
+                const istOffset = 5.5 * 60 * 60 * 1000; // 5 hours 30 minutes in milliseconds
+                const istDate = new Date(date.getTime() + istOffset);
+
+                // Format IST datetime
+                const istString = istDate.toISOString().replace('T', ' ').substring(0, 19) + ' IST';
+
+                // Format date as dd-mm-yyyy
+                const day = String(istDate.getUTCDate()).padStart(2, '0');
+                const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+                const year = istDate.getUTCFullYear();
+                const dateString = `${day}-${month}-${year}`;
+
+                return { ist: istString, date: dateString };
+            } catch (e) {
+                return { ist: 'Error', date: 'Error' };
+            }
+        }
+
+        function parseCSV(text) {
+            const lines = text.split('\n').filter(line => line.trim());
+            if (lines.length === 0) {
+                throw new Error('CSV file is empty');
+            }
+
+            // Detect delimiter (comma or semicolon)
+            const firstLine = lines[0];
+            const delimiter = firstLine.includes(',') ? ',' : ';';
+
+            // Parse header
+            const headers = firstLine.split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
+
+            // Find created_at column index
+            const createdAtIndex = headers.findIndex(h => 
+                h.toLowerCase() === 'created_at' || 
+                h.toLowerCase() === 'createdat' ||
+                h.toLowerCase() === 'created at'
+            );
+
+            if (createdAtIndex === -1) {
+                throw new Error('Column "created_at" not found in CSV. Please ensure your CSV has a column named "created_at".');
+            }
+
+            // Parse rows
+            const rows = [];
+            for (let i = 1; i < lines.length; i++) {
+                const values = lines[i].split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
+                if (values.length === headers.length) {
+                    rows.push(values);
+                }
+            }
+
+            return { headers, rows, createdAtIndex, delimiter };
+        }
+
+        function processFile(file) {
+            if (!file.name.toLowerCase().endsWith('.csv')) {
+                showError('Please upload a CSV file.');
+                return;
+            }
+
+            hideError();
+            loading.classList.add('active');
+            preview.classList.remove('active');
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const text = e.target.result;
+                    const { headers, rows, createdAtIndex, delimiter } = parseCSV(text);
+
+                    // Process data
+                    const newHeaders = [...headers, 'created_at_ist', 'date'];
+                    const processedRows = rows.map(row => {
+                        const utcValue = row[createdAtIndex];
+                        const { ist, date } = convertUTCtoIST(utcValue);
+                        return [...row, ist, date];
+                    });
+
+                    processedData = {
+                        headers: newHeaders,
+                        rows: processedRows
+                    };
+
+                    // Generate CSV content
+                    csvContent = generateCSV(newHeaders, processedRows, delimiter);
+
+                    // Display preview
+                    displayPreview(newHeaders, processedRows);
+                    loading.classList.remove('active');
+                    preview.classList.add('active');
+                } catch (err) {
+                    showError(err.message || 'Error processing CSV file. Please check the file format.');
+                }
+            };
+
+            reader.onerror = () => {
+                showError('Error reading file. Please try again.');
+            };
+
+            reader.readAsText(file);
+        }
+
+        function generateCSV(headers, rows, delimiter) {
+            const lines = [
+                headers.map(h => `"${h}"`).join(delimiter),
+                ...rows.map(row => row.map(cell => `"${cell}"`).join(delimiter))
+            ];
+            return lines.join('\n');
+        }
+
+        function displayPreview(headers, rows) {
+            // Display stats
+            stats.innerHTML = `
+                <div class="stat-item">
+                    <div class="stat-label">Total Rows</div>
+                    <div class="stat-value">${rows.length}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Total Columns</div>
+                    <div class="stat-value">${headers.length}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">New Columns</div>
+                    <div class="stat-value">2</div>
+                </div>
+            `;
+
+            // Display table header
+            tableHead.innerHTML = headers.map(h => `<th>${h}</th>`).join('');
+
+            // Display table body (first 100 rows for preview)
+            const previewRows = rows.slice(0, 100);
+            tableBody.innerHTML = previewRows.map(row => 
+                `<tr>${row.map(cell => `<td>${cell || ''}</td>`).join('')}</tr>`
+            ).join('');
+
+            if (rows.length > 100) {
+                const moreRows = rows.length - 100;
+                tableBody.innerHTML += `<tr><td colspan="${headers.length}" style="text-align: center; color: #666; font-style: italic;">... and ${moreRows} more rows (download CSV to see all)</td></tr>`;
+            }
+        }
+    </script>
+</body>
+</html>
