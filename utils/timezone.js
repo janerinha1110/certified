@@ -52,9 +52,11 @@ function toIST(date) {
   if (!(date instanceof Date)) {
     date = new Date(date);
   }
+  if (isNaN(date)) {
+    return new Date(NaN);
+  }
   const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
-  const utcTime = date.getTime() + (date.getTimezoneOffset() * 60 * 1000);
-  return new Date(utcTime + istOffset);
+  return new Date(date.getTime() + istOffset);
 }
 
 /**

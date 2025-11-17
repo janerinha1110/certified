@@ -10,6 +10,22 @@ const { body, validationResult } = require('express-validator');
 const mixpanelService = require('../utils/mixpanelService');
 const { toIST } = require('../utils/timezone');
 
+const formatISTTimestamp = (value) => {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (isNaN(date)) {
+    return value ? String(value) : '';
+  }
+  const istDate = toIST(date);
+  const year = istDate.getUTCFullYear();
+  const month = String(istDate.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(istDate.getUTCDate()).padStart(2, '0');
+  const hours = String(istDate.getUTCHours()).padStart(2, '0');
+  const minutes = String(istDate.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(istDate.getUTCSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} IST`;
+};
+
 // Shared function for quiz response submission logic
 const handleQuizResponseSubmission = async (userData) => {
   const { name, email, phone, certified_user_skill_id } = userData;
@@ -3327,6 +3343,7 @@ router.get('/export_hr_management_data', async (req, res) => {
         u.phone,
         u.email,
         u.name,
+        u.created_at as user_created_at,
         s.certified_user_id as certified_skill_id,
         s.id as session_id,
         COALESCE(
@@ -3342,7 +3359,7 @@ router.get('/export_hr_management_data', async (req, res) => {
       INNER JOIN sessions s ON u.id = s.user_id AND s.subject = $1
       LEFT JOIN questions q ON s.id = q.session_id
       WHERE u.subject = $1
-      GROUP BY u.id, u.phone, u.email, u.name, s.certified_user_id, s.id
+      GROUP BY u.id, u.phone, u.email, u.name, u.created_at, s.certified_user_id, s.id
       ORDER BY u.created_at DESC
     `;
 
@@ -3361,6 +3378,8 @@ router.get('/export_hr_management_data', async (req, res) => {
           email: row.email,
           name: row.name,
           certified_skill_id: row.certified_skill_id,
+          session_id: row.session_id,
+          user_created_at_ist: formatISTTimestamp(row.user_created_at),
           questions: row.questions || []
         }))
       });
@@ -3369,7 +3388,7 @@ router.get('/export_hr_management_data', async (req, res) => {
       const csvRows = [];
       
       // CSV Header
-      csvRows.push('phone,email,name,certified_skill_id,questions');
+      csvRows.push('phone,email,name,certified_skill_id,session_id,user_created_at_ist,questions');
       
       // CSV Data Rows
       for (const row of rows) {
@@ -3377,10 +3396,12 @@ router.get('/export_hr_management_data', async (req, res) => {
         const email = (row.email || '').replace(/"/g, '""');
         const name = (row.name || '').replace(/"/g, '""');
         const certifiedSkillId = row.certified_skill_id || '';
+        const sessionId = (row.session_id || '').replace(/"/g, '""');
+        const userCreatedAt = formatISTTimestamp(row.user_created_at).replace(/"/g, '""');
         const questionsJson = JSON.stringify(row.questions || []);
         const questionsEscaped = questionsJson.replace(/"/g, '""');
         
-        csvRows.push(`"${phone}","${email}","${name}","${certifiedSkillId}","${questionsEscaped}"`);
+        csvRows.push(`"${phone}","${email}","${name}","${certifiedSkillId}","${sessionId}","${userCreatedAt}","${questionsEscaped}"`);
       }
       
       const csvContent = csvRows.join('\n');
@@ -3394,6 +3415,263 @@ router.get('/export_hr_management_data', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to export HR Management data',
+      error: error.message,
+      ...(process.env.NODE_ENV === 'development' && { details: error.stack })
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/export_all_subject_data:
+ *   get:
+ *     summary: Export all user data with sessions and questions
+ *     description: Fetches all users, their sessions, and associated questions, then exports as CSV or JSON
+ *     tags: [Quiz]
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, json]
+ *           default: csv
+ *         description: Output format (csv or json)
+ *     responses:
+ *       200:
+ *         description: Data exported successfully
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/export_all_subject_data', async (req, res) => {
+  try {
+    const format = req.query.format || 'csv';
+
+    console.log(`📊 Exporting all subject data in ${format} format...`);
+
+    const exportQuery = `
+      SELECT 
+        u.phone,
+        u.email,
+        u.name,
+        u.subject,
+        u.created_at as user_created_at,
+        s.certified_user_id as certified_skill_id,
+        s.id as session_id,
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'question_no', q.question_no,
+              'answered', q.answered
+            ) ORDER BY q.question_no ASC
+          ) FILTER (WHERE q.id IS NOT NULL),
+          '[]'::json
+        ) as questions
+      FROM users u
+      INNER JOIN sessions s ON u.id = s.user_id
+      LEFT JOIN questions q ON s.id = q.session_id
+      GROUP BY u.id, u.phone, u.email, u.name, u.subject, u.created_at, s.certified_user_id, s.id
+      ORDER BY u.created_at DESC
+    `;
+
+    const result = await query(exportQuery);
+    const rows = result.rows;
+
+    console.log(`✅ Found ${rows.length} users with sessions to export`);
+
+    if (format === 'json') {
+      return res.status(200).json({
+        success: true,
+        message: `Exported ${rows.length} records`,
+        data: rows.map(row => ({
+          phone: row.phone,
+          email: row.email,
+          name: row.name,
+          subject: row.subject,
+          certified_skill_id: row.certified_skill_id,
+          session_id: row.session_id,
+          user_created_at_ist: formatISTTimestamp(row.user_created_at),
+          questions: row.questions || []
+        }))
+      });
+    } else {
+      const csvRows = [];
+      csvRows.push('phone,email,name,subject,certified_skill_id,session_id,user_created_at_ist,questions');
+
+      for (const row of rows) {
+        const phone = (row.phone || '').replace(/"/g, '""');
+        const email = (row.email || '').replace(/"/g, '""');
+        const name = (row.name || '').replace(/"/g, '""');
+        const subject = (row.subject || '').replace(/"/g, '""');
+        const certifiedSkillId = row.certified_skill_id || '';
+        const sessionId = (row.session_id || '').replace(/"/g, '""');
+        const userCreatedAt = formatISTTimestamp(row.user_created_at).replace(/"/g, '""');
+        const questionsJson = JSON.stringify(row.questions || []);
+        const questionsEscaped = questionsJson.replace(/"/g, '""');
+
+        csvRows.push(`"${phone}","${email}","${name}","${subject}","${certifiedSkillId}","${sessionId}","${userCreatedAt}","${questionsEscaped}"`);
+      }
+
+      const csvContent = csvRows.join('\n');
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="all_subjects_export_${new Date().toISOString().split('T')[0]}.csv"`);
+      return res.status(200).send(csvContent);
+    }
+  } catch (error) {
+    console.error('❌ Error exporting all subject data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export all subject data',
+      error: error.message,
+      ...(process.env.NODE_ENV === 'development' && { details: error.stack })
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/user-metrics:
+ *   get:
+ *     summary: Fetch aggregate user quiz metrics in a time window (IST)
+ *     description: Returns counts for users created, first question answered, five questions answered, quiz completion (10 questions or quiz flag), and analysis generation within the specified IST epoch range.
+ *     tags: [Analytics]
+ *     parameters:
+ *       - in: query
+ *         name: start_epoch
+ *         schema:
+ *           type: integer
+ *           example: 1731820200000
+ *         required: true
+ *         description: Start of the reporting window in milliseconds since epoch (interpreted as IST).
+ *       - in: query
+ *         name: end_epoch
+ *         schema:
+ *           type: integer
+ *           example: 1731834600000
+ *         required: true
+ *         description: End of the reporting window in milliseconds since epoch (interpreted as IST).
+ *     responses:
+ *       200:
+ *         description: Metrics calculated successfully
+ *       400:
+ *         description: Missing or invalid parameters
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/user-metrics', async (req, res) => {
+  try {
+    const { start_epoch: startEpochParam, end_epoch: endEpochParam } = req.query;
+
+    if (!startEpochParam || !endEpochParam) {
+      return res.status(400).json({
+        success: false,
+        message: 'start_epoch and end_epoch query parameters are required'
+      });
+    }
+
+    const startEpoch = Number(startEpochParam);
+    const endEpoch = Number(endEpochParam);
+
+    if (!Number.isFinite(startEpoch) || !Number.isFinite(endEpoch)) {
+      return res.status(400).json({
+        success: false,
+        message: 'start_epoch and end_epoch must be valid epoch milliseconds'
+      });
+    }
+
+    if (startEpoch >= endEpoch) {
+      return res.status(400).json({
+        success: false,
+        message: 'start_epoch must be earlier than end_epoch'
+      });
+    }
+
+    const startDateUTC = new Date(startEpoch);
+    const endDateUTC = new Date(endEpoch);
+
+    if (isNaN(startDateUTC) || isNaN(endDateUTC)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to parse provided epoch values'
+      });
+    }
+
+    console.log(`📈 Generating user metrics from ${formatISTTimestamp(startDateUTC)} to ${formatISTTimestamp(endDateUTC)} (IST)`);
+
+    const metricsQuery = `
+      WITH filtered_users AS (
+        SELECT id
+        FROM users
+        WHERE created_at BETWEEN $1 AND $2
+      ),
+      user_stats AS (
+        SELECT 
+          fu.id AS user_id,
+          BOOL_OR(q.question_no = 1 AND q.answered IS TRUE) AS answered_first_question,
+          COUNT(*) FILTER (WHERE q.answered IS TRUE) AS answered_count,
+          BOOL_OR(s.quiz_completed IS TRUE) AS quiz_completed,
+          BOOL_OR(s.quiz_analysis_generated IS TRUE) AS analysis_generated
+        FROM filtered_users fu
+        LEFT JOIN sessions s ON s.user_id = fu.id
+        LEFT JOIN questions q ON q.session_id = s.id
+        GROUP BY fu.id
+      )
+      SELECT
+        (SELECT COUNT(*) FROM filtered_users) AS users_created,
+        (SELECT COUNT(*) FROM user_stats WHERE answered_first_question) AS answered_first_question,
+        (SELECT COUNT(*) FROM user_stats WHERE answered_count >= 5) AS answered_five_questions,
+        (SELECT COUNT(*) FROM user_stats WHERE answered_count >= 10 OR quiz_completed) AS completed_quiz,
+        (SELECT COUNT(*) FROM user_stats WHERE analysis_generated) AS analysis_generated
+    `;
+
+    const metricsResult = await query(metricsQuery, [
+      startDateUTC.toISOString(),
+      endDateUTC.toISOString()
+    ]);
+
+    const metricsRow = metricsResult.rows[0] || {};
+    const toNumber = (value) => (typeof value === 'number' ? value : Number(value) || 0);
+
+    console.log('📊 User metrics raw result:', metricsRow);
+
+    const durationHours = Number(((endEpoch - startEpoch) / (1000 * 60 * 60)).toFixed(2));
+
+    res.status(200).json({
+      success: true,
+      range: {
+        start_epoch: startEpoch,
+        end_epoch: endEpoch,
+        start_ist: formatISTTimestamp(startDateUTC),
+        end_ist: formatISTTimestamp(endDateUTC),
+        duration_hours: durationHours
+      },
+      metrics: {
+        users_created: toNumber(metricsRow.users_created),
+        answered_first_question: toNumber(metricsRow.answered_first_question),
+        answered_five_questions: toNumber(metricsRow.answered_five_questions),
+        completed_quiz: toNumber(metricsRow.completed_quiz),
+        analysis_generated: toNumber(metricsRow.analysis_generated)
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error generating user metrics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate user metrics',
       error: error.message,
       ...(process.env.NODE_ENV === 'development' && { details: error.stack })
     });
