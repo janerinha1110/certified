@@ -4036,4 +4036,119 @@ router.post('/migrate-session-timestamps-to-ist', async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/session/flag:
+ *   post:
+ *     summary: Mark a session as attempted or paid
+ *     description: Sets the requested boolean flag on the sessions table to true for the provided session_id.
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - session_id
+ *               - column
+ *             properties:
+ *               session_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Session ID to update.
+ *                 example: "3f2b9f62-5f29-4b55-9a6e-1fcb7d067b1f"
+ *               column:
+ *                 type: string
+ *                 enum: [attempted, paid]
+ *                 description: Which flag should be marked true.
+ *                 example: "attempted"
+ *     responses:
+ *       200:
+ *         description: Session flag updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 session_id:
+ *                   type: string
+ *                 column:
+ *                   type: string
+ *                 value:
+ *                   type: boolean
+ *       400:
+ *         description: Invalid request payload
+ *       404:
+ *         description: Session not found
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  '/session/flag',
+  [
+    body('session_id')
+      .exists().withMessage('session_id is required')
+      .isString().withMessage('session_id must be a string')
+      .notEmpty().withMessage('session_id cannot be empty'),
+    body('column')
+      .exists().withMessage('column is required')
+      .isString().withMessage('column must be a string')
+      .custom((value) => ['attempted', 'paid'].includes(value))
+      .withMessage('column must be attempted or paid')
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { session_id: sessionId, column } = req.body;
+    const columnName = column === 'attempted' ? 'attempted' : 'paid';
+
+    try {
+      const updateQuery = `
+        UPDATE sessions
+        SET ${columnName} = TRUE
+        WHERE id = $1
+        RETURNING id, user_id, subject, ${columnName}
+      `;
+
+      const updateResult = await query(updateQuery, [sessionId]);
+
+      if (updateResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Session not found'
+        });
+      }
+
+      const updatedSession = updateResult.rows[0];
+
+      return res.status(200).json({
+        success: true,
+        message: `Session ${columnName} flag updated`,
+        session_id: updatedSession.id,
+        column: columnName,
+        value: updatedSession[columnName]
+      });
+    } catch (error) {
+      console.error('❌ Error updating session flag:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update session flag',
+        error: error.message
+      });
+    }
+  }
+);
+
 module.exports = router;

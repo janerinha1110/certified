@@ -18,6 +18,7 @@ Express.js server with Supabase integration for quiz management system.
 - `POST /api/start_quiz` - Start a new quiz session
 - `POST /api/save_answer` - Save answer and get next question
 - `POST /api/submit_quiz_response` - Submit complete quiz response
+- `POST /api/session/flag` - Mark a session as attempted or paid
 - `GET /health` - Health check
 - `GET /api-docs` - Swagger documentation
 - `GET /` - API information
@@ -136,6 +137,8 @@ The project includes a `vercel.json` file with:
 - `quiz_completed` (Boolean)
 - `quiz_analysis_generated` (Boolean)
 - `quiz_attempt_object` (JSONB)
+- `attempted` (Boolean) - Whether the session has been attempted
+- `paid` (Boolean) - Whether the associated order has been paid
 - `order_id` (Integer) - Order ID from create_v2_test API
 - `created_at` (Timestamp)
 
@@ -216,6 +219,28 @@ curl -X POST https://your-domain.vercel.app/api/start_quiz \
     "subject": "Blender Advanced"
   }'
 ```
+
+## Session Flag API
+
+- `POST /api/session/flag`
+  - **Request Body**
+    ```json
+    {
+      "session_id": "uuid",
+      "column": "attempted" // or "paid"
+    }
+    ```
+  - **Response**
+    ```json
+    {
+      "success": true,
+      "message": "Session attempted flag updated",
+      "session_id": "uuid",
+      "column": "attempted",
+      "value": true
+    }
+    ```
+  - Marks the requested boolean column on the `sessions` table as `true`. Returns `404` if the session ID does not exist or `400` for invalid payloads.
 
 ## Troubleshooting
 
