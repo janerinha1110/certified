@@ -4151,4 +4151,158 @@ router.post(
   }
 );
 
+/**
+ * @swagger
+ * /api/session/clicked_on:
+ *   post:
+ *     summary: Update clicked_on value for a session
+ *     description: Updates the clicked_on enum column in the sessions table for the provided session_id. The value must be either 'unlock_cert' or 'know_more'.
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - session_id
+ *               - value
+ *             properties:
+ *               session_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Session ID to update.
+ *                 example: "3f2b9f62-5f29-4b55-9a6e-1fcb7d067b1f"
+ *               value:
+ *                 type: string
+ *                 enum: [unlock_cert, know_more]
+ *                 description: The clicked_on value to set. Must be either 'unlock_cert' or 'know_more'.
+ *                 example: "unlock_cert"
+ *     responses:
+ *       200:
+ *         description: Session clicked_on value updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Session clicked_on value updated"
+ *                 session_id:
+ *                   type: string
+ *                   format: uuid
+ *                 clicked_on:
+ *                   type: string
+ *                   enum: [unlock_cert, know_more]
+ *       400:
+ *         description: Invalid request payload
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Validation failed"
+ *                 errors:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *       404:
+ *         description: Session not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Session not found"
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to update session clicked_on value"
+ *                 error:
+ *                   type: string
+ */
+router.post(
+  '/session/clicked_on',
+  [
+    body('session_id')
+      .exists().withMessage('session_id is required')
+      .isString().withMessage('session_id must be a string')
+      .notEmpty().withMessage('session_id cannot be empty'),
+    body('value')
+      .exists().withMessage('value is required')
+      .isString().withMessage('value must be a string')
+      .custom((value) => ['unlock_cert', 'know_more'].includes(value))
+      .withMessage('value must be unlock_cert or know_more')
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { session_id: sessionId, value } = req.body;
+
+    try {
+      const updateQuery = `
+        UPDATE sessions
+        SET clicked_on = $1::clicked_on_enum
+        WHERE id = $2
+        RETURNING id, user_id, subject, clicked_on
+      `;
+
+      const updateResult = await query(updateQuery, [value, sessionId]);
+
+      if (updateResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Session not found'
+        });
+      }
+
+      const updatedSession = updateResult.rows[0];
+
+      return res.status(200).json({
+        success: true,
+        message: 'Session clicked_on value updated',
+        session_id: updatedSession.id,
+        clicked_on: updatedSession.clicked_on
+      });
+    } catch (error) {
+      console.error('❌ Error updating session clicked_on:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update session clicked_on value',
+        error: error.message
+      });
+    }
+  }
+);
+
 module.exports = router;
