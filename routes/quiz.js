@@ -3547,23 +3547,23 @@ router.get('/export_all_subject_data', async (req, res) => {
  * /api/user-metrics:
  *   get:
  *     summary: Fetch aggregate user quiz metrics in a time window (IST)
- *     description: Returns counts for users created, first question answered, five questions answered, quiz completion (10 questions or quiz flag), and analysis generation within the specified IST epoch range.
+ *     description: Returns counts for users created, started quiz, first question answered, five questions answered, quiz completion (10 questions or quiz flag), analysis generation, attempted count, and paid count within the specified IST epoch range.
  *     tags: [Analytics]
  *     parameters:
  *       - in: query
- *         name: start_epoch
+ *         name: start_date
  *         schema:
  *           type: integer
- *           example: 1731820200000
+ *           example: 1763404200000
  *         required: true
- *         description: Start of the reporting window in milliseconds since epoch (interpreted as IST).
+ *         description: Start of the reporting window in milliseconds since epoch (UTC).
  *       - in: query
- *         name: end_epoch
+ *         name: stop_date
  *         schema:
  *           type: integer
- *           example: 1731834600000
+ *           example: 1763407800000
  *         required: true
- *         description: End of the reporting window in milliseconds since epoch (interpreted as IST).
+ *         description: End of the reporting window in milliseconds since epoch (UTC).
  *     responses:
  *       200:
  *         description: Metrics calculated successfully
@@ -3574,34 +3574,34 @@ router.get('/export_all_subject_data', async (req, res) => {
  */
 router.get('/user-metrics', async (req, res) => {
   try {
-    const { start_epoch: startEpochParam, end_epoch: endEpochParam } = req.query;
+    const { start_date: startDateParam, stop_date: stopDateParam } = req.query;
 
-    if (!startEpochParam || !endEpochParam) {
+    if (!startDateParam || !stopDateParam) {
       return res.status(400).json({
         success: false,
-        message: 'start_epoch and end_epoch query parameters are required'
+        message: 'start_date and stop_date query parameters are required'
       });
     }
 
-    const startEpoch = Number(startEpochParam);
-    const endEpoch = Number(endEpochParam);
+    const startEpochUTC = Number(startDateParam);
+    const endEpochUTC = Number(stopDateParam);
 
-    if (!Number.isFinite(startEpoch) || !Number.isFinite(endEpoch)) {
+    if (!Number.isFinite(startEpochUTC) || !Number.isFinite(endEpochUTC)) {
       return res.status(400).json({
         success: false,
-        message: 'start_epoch and end_epoch must be valid epoch milliseconds'
+        message: 'start_date and stop_date must be valid epoch milliseconds'
       });
     }
 
-    if (startEpoch >= endEpoch) {
+    if (startEpochUTC >= endEpochUTC) {
       return res.status(400).json({
         success: false,
-        message: 'start_epoch must be earlier than end_epoch'
+        message: 'start_date must be earlier than stop_date'
       });
     }
 
-    const startDateUTC = new Date(startEpoch);
-    const endDateUTC = new Date(endEpoch);
+    const startDateUTC = new Date(startEpochUTC);
+    const endDateUTC = new Date(endEpochUTC);
 
     if (isNaN(startDateUTC) || isNaN(endDateUTC)) {
       return res.status(400).json({
@@ -3610,12 +3610,20 @@ router.get('/user-metrics', async (req, res) => {
       });
     }
 
-    console.log(`📈 Generating user metrics from ${formatISTTimestamp(startDateUTC)} to ${formatISTTimestamp(endDateUTC)} (IST)`);
+    console.log('[Metrics] Filtering range (UTC):', {
+      startUTC: startDateUTC.toISOString(),
+      endUTC: endDateUTC.toISOString()
+    });
 
     const metricsQuery = `
       WITH filtered_users AS (
         SELECT id
         FROM users
+        WHERE created_at BETWEEN $1 AND $2
+      ),
+      filtered_sessions AS (
+        SELECT id, user_id, attempted, paid, started_quiz
+        FROM sessions
         WHERE created_at BETWEEN $1 AND $2
       ),
       user_stats AS (
@@ -3632,10 +3640,13 @@ router.get('/user-metrics', async (req, res) => {
       )
       SELECT
         (SELECT COUNT(*) FROM filtered_users) AS users_created,
+        (SELECT COUNT(*) FROM filtered_sessions WHERE started_quiz = TRUE) AS started_quiz,
         (SELECT COUNT(*) FROM user_stats WHERE answered_first_question) AS answered_first_question,
         (SELECT COUNT(*) FROM user_stats WHERE answered_count >= 5) AS answered_five_questions,
         (SELECT COUNT(*) FROM user_stats WHERE answered_count >= 10 OR quiz_completed) AS completed_quiz,
-        (SELECT COUNT(*) FROM user_stats WHERE analysis_generated) AS analysis_generated
+        (SELECT COUNT(*) FROM user_stats WHERE analysis_generated) AS analysis_generated,
+        (SELECT COUNT(*) FROM filtered_sessions WHERE attempted = TRUE) AS attempted_count,
+        (SELECT COUNT(*) FROM filtered_sessions WHERE paid = TRUE) AS paid_count
     `;
 
     const metricsResult = await query(metricsQuery, [
@@ -3648,23 +3659,17 @@ router.get('/user-metrics', async (req, res) => {
 
     console.log('📊 User metrics raw result:', metricsRow);
 
-    const durationHours = Number(((endEpoch - startEpoch) / (1000 * 60 * 60)).toFixed(2));
-
     res.status(200).json({
       success: true,
-      range: {
-        start_epoch: startEpoch,
-        end_epoch: endEpoch,
-        start_ist: formatISTTimestamp(startDateUTC),
-        end_ist: formatISTTimestamp(endDateUTC),
-        duration_hours: durationHours
-      },
       metrics: {
         users_created: toNumber(metricsRow.users_created),
+        started_quiz: toNumber(metricsRow.started_quiz),
         answered_first_question: toNumber(metricsRow.answered_first_question),
         answered_five_questions: toNumber(metricsRow.answered_five_questions),
         completed_quiz: toNumber(metricsRow.completed_quiz),
-        analysis_generated: toNumber(metricsRow.analysis_generated)
+        analysis_done: toNumber(metricsRow.analysis_generated),
+        attempted_count: toNumber(metricsRow.attempted_count),
+        paid_count: toNumber(metricsRow.paid_count)
       }
     });
   } catch (error) {
