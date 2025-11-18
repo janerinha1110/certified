@@ -4153,6 +4153,106 @@ router.post(
 
 /**
  * @swagger
+ * /api/session/start_quiz:
+ *   post:
+ *     summary: Mark a session as started quiz
+ *     description: Sets the started_quiz column to true for the provided session_id.
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - session_id
+ *             properties:
+ *               session_id:
+ *                 type: string
+ *                 format: uuid
+ *                 description: Session ID to update.
+ *                 example: "3f2b9f62-5f29-4b55-9a6e-1fcb7d067b1f"
+ *     responses:
+ *       200:
+ *         description: Session started_quiz flag updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 session_id:
+ *                   type: string
+ *                 started_quiz:
+ *                   type: boolean
+ *       400:
+ *         description: Invalid request payload
+ *       404:
+ *         description: Session not found
+ *       500:
+ *         description: Internal server error
+ */
+router.post(
+  '/session/start_quiz',
+  [
+    body('session_id')
+      .exists().withMessage('session_id is required')
+      .isString().withMessage('session_id must be a string')
+      .notEmpty().withMessage('session_id cannot be empty')
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { session_id: sessionId } = req.body;
+
+    try {
+      const updateQuery = `
+        UPDATE sessions
+        SET started_quiz = TRUE
+        WHERE id = $1
+        RETURNING id, user_id, subject, started_quiz
+      `;
+
+      const updateResult = await query(updateQuery, [sessionId]);
+
+      if (updateResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Session not found'
+        });
+      }
+
+      const updatedSession = updateResult.rows[0];
+
+      return res.status(200).json({
+        success: true,
+        message: 'Session started_quiz flag updated',
+        session_id: updatedSession.id,
+        started_quiz: updatedSession.started_quiz
+      });
+    } catch (error) {
+      console.error('❌ Error updating session started_quiz flag:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to update session started_quiz flag',
+        error: error.message
+      });
+    }
+  }
+);
+
+/**
+ * @swagger
  * /api/session/clicked_on:
  *   post:
  *     summary: Update clicked_on value for a session
