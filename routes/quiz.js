@@ -27,7 +27,7 @@ const formatISTTimestamp = (value) => {
 };
 
 // Shared function for quiz response submission logic
-const handleQuizResponseSubmission = async (userData) => {
+const handleQuizResponseSubmission = async (userData, options = {}) => {
   const { name, email, phone, certified_user_skill_id } = userData;
   
   console.log('📝 Processing quiz response submission...');
@@ -35,7 +35,8 @@ const handleQuizResponseSubmission = async (userData) => {
   
   // Submit quiz response
   const result = await quizResponseService.submitQuizResponse(
-    { name, email, phone, certified_user_skill_id }
+    { name, email, phone, certified_user_skill_id },
+    options
   );
   
   console.log('🔍 Raw service result:', JSON.stringify(result, null, 2));
@@ -3110,14 +3111,6 @@ router.post('/auto_submit_quiz_v3', async (req, res) => {
       has_certified_token: !!sessionData.certified_token
     });
     
-    // Validate that certified_token exists
-    if (!sessionData.certified_token || sessionData.certified_token.trim() === '') {
-      return res.status(400).json({
-        result: "failed",
-        message: "No certified token found in session"
-      });
-    }
-    
     // If type is "1", update user email
     if (typeStr === "1" && email) {
       console.log('📧 Updating user email from', sessionData.email, 'to', email);
@@ -3167,10 +3160,10 @@ router.post('/auto_submit_quiz_v3', async (req, res) => {
       email_updated: typeStr === "1"
     });
     
-    // Call service method with existing token
-    const result = await quizResponseService.submitQuizResponseWithToken(
+    // Call full quiz submission flow but skip Create V2 Test API
+    const result = await quizResponseService.submitQuizResponse(
       userData,
-      sessionData.certified_token
+      { skipCreateV2Test: true }
     );
     
     console.log('🔍 Raw service result:', JSON.stringify(result, null, 2));
@@ -3213,8 +3206,8 @@ router.post('/auto_submit_quiz_v3', async (req, res) => {
     mixpanelService.trackQuizScored({
       user_id: result.data.user?.id,
       session_id: result.data.session?.id,
-      email: sessionData.email,
-      phone: sessionData.phone,
+      email: result.data.user?.email || sessionData.email,
+      phone: result.data.user?.phone || sessionData.phone,
       score,
       score_category: successValue,
       correct_answers: result.data.quiz_results?.correct_answers || 0,

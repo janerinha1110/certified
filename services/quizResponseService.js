@@ -6,9 +6,10 @@ const analysisService = require('./analysisService');
 const createV2TestService = require('./createV2TestService');
 
 class QuizResponseService {
-  async submitQuizResponse(userData) {
+  async submitQuizResponse(userData, options = {}) {
     try {
       console.log('📝 Processing quiz response submission...');
+      const { skipCreateV2Test = false } = options;
       
       // Get user data from database
       const userQuery = `
@@ -173,20 +174,24 @@ class QuizResponseService {
       
       console.log('✅ Certificate claim API completed');
       
-      // Now call create_v2_test API
-      console.log('🎯 Calling create_v2_test API...');
-      
-      const createV2TestResult = await createV2TestService.createV2Test(
-        continueResult.token,
-        certifiedUserSkillId
-      );
-      
-      if (!createV2TestResult.success) {
-        console.error('Create V2 Test failed:', createV2TestResult);
-        // Don't throw error, just log it
+      let createV2TestResult = { skipped: false };
+      if (skipCreateV2Test) {
+        console.log('⏭️ Skipping Create V2 Test API as requested.');
+        createV2TestResult = { skipped: true, message: 'Create V2 Test API skipped' };
+      } else {
+        console.log('🎯 Calling create_v2_test API...');
+        createV2TestResult = await createV2TestService.createV2Test(
+          continueResult.token,
+          certifiedUserSkillId
+        );
+
+        if (!createV2TestResult.success) {
+          console.error('Create V2 Test failed:', createV2TestResult);
+          // Don't throw error, just log it
+        }
+
+        console.log('✅ Create V2 Test API completed');
       }
-      
-      console.log('✅ Create V2 Test API completed');
       
       // Now call quiz analysis API
       console.log('📊 Calling quiz analysis API...');
@@ -205,7 +210,9 @@ class QuizResponseService {
       
       // Update session as quiz completed and analysis generated (only if analysis was successful)
       const analysisGenerated = analysisResult.success;
-      const orderId = createV2TestResult.success && createV2TestResult.data ? createV2TestResult.data.id : null;
+      const orderId = (!skipCreateV2Test && createV2TestResult.success && createV2TestResult.data)
+        ? createV2TestResult.data.id
+        : null;
       const updateQuizCompletedQuery = `
         UPDATE sessions 
         SET quiz_completed = true, quiz_analysis_generated = $1, quiz_attempt_object = $2, order_id = $3
@@ -226,6 +233,7 @@ class QuizResponseService {
           session: {
             id: session.id,
             certified_user_id: session.certified_user_id,
+            certified_token: continueResult.token,
             token_updated: true,
             quiz_completed: true,
             quiz_analysis_generated: analysisGenerated,
