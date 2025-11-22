@@ -2610,6 +2610,22 @@ const validateQuizResponse = [
  *                     total_questions:
  *                       type: integer
  *                       description: Total number of questions in the quiz
+ *                     scenario:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Scenario/context text (only present for question 5 or 8 if available)
+ *                     has_scenario:
+ *                       type: boolean
+ *                       description: True if scenario is available for this question
+ *                     code_snippet_imageLink:
+ *                       type: string
+ *                       nullable: true
+ *                       description: URL to code image if question has code snippet (for cybersecurity questions), null otherwise
+ *                       example: "https://certified-fallback.s3.amazonaws.com/code-1.png"
+ *                     has_code_image:
+ *                       type: boolean
+ *                       description: True if code_snippet_imageLink has a non-empty value
+ *                       example: true
  *             examples:
  *               next_question:
  *                 summary: Next question available
@@ -2623,6 +2639,26 @@ const validateQuizResponse = [
  *                     question_no: 2
  *                     current_question_no: 1
  *                     total_questions: 10
+ *                     scenario: null
+ *                     has_scenario: false
+ *                     code_snippet_imageLink: null
+ *                     has_code_image: false
+ *               next_question_with_code_image:
+ *                 summary: Next question with code image (cybersecurity)
+ *                 value:
+ *                   success: true
+ *                   message: "Answer saved successfully"
+ *                   data:
+ *                     status: "pending"
+ *                     question: "Review this password reset function. What security vulnerability is present?"
+ *                     question_id: "123e4567-e89b-12d3-a456-426614174003"
+ *                     question_no: 4
+ *                     current_question_no: 3
+ *                     total_questions: 10
+ *                     scenario: null
+ *                     has_scenario: false
+ *                     code_snippet_imageLink: "https://certified-fallback.s3.amazonaws.com/code-1.png"
+ *                     has_code_image: true
  *               quiz_complete:
  *                 summary: Quiz completed
  *                 value:

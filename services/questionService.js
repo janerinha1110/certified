@@ -219,7 +219,7 @@ D) ${option_d}`;
       
       // Get the next question in order
       const nextQuestionQuery = `
-        SELECT id, question_no, question, answer, correct_answer, answered, scenario
+        SELECT id, question_no, question, answer, correct_answer, answered, scenario, "code_snippet_imageLink"
         FROM questions 
         WHERE session_id = $1 AND question_no = $2
         ORDER BY question_no ASC
@@ -255,7 +255,9 @@ D) ${option_d}`;
           : null,
         has_scenario: (nextQuestion.question_no === 5 || nextQuestion.question_no === 8)
           ? !!(nextQuestion.scenario && String(nextQuestion.scenario).trim() !== '')
-          : false
+          : false,
+        code_snippet_imageLink: nextQuestion.code_snippet_imageLink || null,
+        has_code_image: !!(nextQuestion.code_snippet_imageLink && nextQuestion.code_snippet_imageLink.trim() !== '')
       };
       
     } catch (error) {
