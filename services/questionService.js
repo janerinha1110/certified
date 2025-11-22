@@ -45,10 +45,11 @@ class QuestionService {
             question_no,
             quiz_id,
             scenario,
+            "code_snippet_imageLink",
             created_at
           ) 
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-          RETURNING id, session_id, user_id, question, answer, correct_answer, answered, created_at, question_no, quiz_id, scenario
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          RETURNING id, session_id, user_id, question, answer, correct_answer, answered, created_at, question_no, quiz_id, scenario, "code_snippet_imageLink"
         `;
         
         // Build scenario only for question 5 (first Medium) and 8 (first Hard)
@@ -60,6 +61,9 @@ class QuestionService {
           scenarioValue = String(textContext);
         }
 
+        // Extract code_snippet_imageLink from questionData (can be null/empty)
+        const codeSnippetImageLink = questionData.code_snippet_imageLink || null;
+
         try {
           const result = await query(questionQuery, [
             sessionId,
@@ -70,7 +74,8 @@ class QuestionService {
             false, // answered starts as false
             i + 1, // question number (1-based)
             questionData.unique_quiz_id || questionData.q_id || null, // unique quiz_id or fallback to q_id
-            scenarioValue
+            scenarioValue,
+            codeSnippetImageLink
           ]);
           
           createdQuestions.push(result.rows[0]);
@@ -116,7 +121,28 @@ class QuestionService {
     const { formatted_question, option_a, option_b, option_c, option_d } = questionData;
     
     // Use formatted_question if available (includes code snippets), otherwise fallback to question
-    const questionText = formatted_question || questionData.question;
+    let questionText = formatted_question || questionData.question || '';
+    
+    // Check if code_snippet_imageLink exists - if it does, don't append code snippet to question text
+    // This is for cybersecurity questions where code is displayed as an image instead
+    const hasCodeImage = questionData.code_snippet_imageLink && questionData.code_snippet_imageLink.trim() !== '';
+    
+    // Only append code snippets if there's no code_snippet_imageLink (for regular questions)
+    if (!hasCodeImage) {
+      // Ensure code snippets are always appended with syntax highlighting
+      const snippetRaw = (questionData.code_snippet || '').trim();
+      if (snippetRaw) {
+        const normalizedSnippet = snippetRaw.replace(/\r\n/g, '\n');
+        const snippetBlock = `\`\`\`js\n${normalizedSnippet}\n\`\`\``;
+        if (!questionText.includes(snippetBlock)) {
+          if (questionText.includes('```')) {
+            // Already contains some fenced code; leave as-is
+          } else {
+            questionText = `${questionText}\n\n${snippetBlock}`.trim();
+          }
+        }
+      }
+    }
     
     // Generate progress emojis - green squares for answered, grey squares for pending
     // For question 1: 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ (1 green, 9 grey)
@@ -141,7 +167,7 @@ D) ${option_d}`;
   async getQuestionsBySession(sessionId) {
     try {
       const questionsQuery = `
-        SELECT id, session_id, user_id, question, answer, correct_answer, answered, created_at, updated_at, question_no, quiz_id
+        SELECT id, session_id, user_id, question, answer, correct_answer, answered, created_at, updated_at, question_no, quiz_id, "code_snippet_imageLink"
         FROM questions 
         WHERE session_id = $1 
         ORDER BY question_no ASC

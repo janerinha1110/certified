@@ -66,15 +66,24 @@ class GenerateQuizService {
       // Helper function to process all questions (including those with code snippets)
       const processAllQuestions = (questionList) => {
         return questionList.map(q => {
-          // Check if code_snippet exists and has content
-          const hasCodeSnippet = q.code_snippet && q.code_snippet.trim() !== '';
+          const baseQuestion = q.formatted_question || q.question || '';
+          const snippetRaw = (q.code_snippet || '').trim();
+          const hasCodeSnippet = snippetRaw !== '';
           
           if (hasCodeSnippet) {
-            console.log(`📝 Question ${q.q_id} includes code snippet: "${q.code_snippet.substring(0, 50)}..."`);
-            // Add code snippet to the question text
-            q.formatted_question = `${q.question}\n\n\`\`\`\n${q.code_snippet}\n\`\`\``;
+            const normalizedSnippet = snippetRaw.replace(/\r\n/g, '\n');
+            const snippetBlock = `\`\`\`js\n${normalizedSnippet}\n\`\`\``;
+            console.log(`📝 Question ${q.q_id} includes code snippet: "${normalizedSnippet.substring(0, 50)}..."`);
+            if (baseQuestion.includes(snippetBlock)) {
+              q.formatted_question = baseQuestion;
+            } else if (baseQuestion.includes('```')) {
+              // Already has some fenced code, preserve as-is
+              q.formatted_question = baseQuestion;
+            } else {
+              q.formatted_question = `${baseQuestion}\n\n${snippetBlock}`.trim();
+            }
           } else {
-            q.formatted_question = q.question;
+            q.formatted_question = baseQuestion;
           }
           
           return q;
@@ -243,6 +252,210 @@ class GenerateQuizService {
     } catch (error) {
       console.error('❌ Error extracting questions:', error.message);
       throw new Error(`Failed to extract questions: ${error.message}`);
+    }
+  }
+
+  extractQuestionsCybersecurity(quizData) {
+    try {
+      const questions = [];
+      
+      if (!quizData.data || !quizData.data.quiz_question_answer || !quizData.data.quiz_question_answer.questionaire) {
+        throw new Error('Invalid quiz data structure');
+      }
+
+      const questionnaire = quizData.data.quiz_question_answer.questionaire;
+      
+      // Helper function to process questions for cybersecurity format
+      // CRITICAL: If code_snippet is not empty, extract code_image instead of appending code to question
+      const processCybersecurityQuestions = (questionList) => {
+        return questionList.map(q => {
+          const baseQuestion = q.question || '';
+          const snippetRaw = (q.code_snippet || '').trim();
+          const hasCodeSnippet = snippetRaw !== '';
+          
+          // For cybersecurity: if code_snippet exists, use code_image instead of appending code
+          if (hasCodeSnippet) {
+            // Do NOT append code snippet to question text
+            // Instead, extract code_image and set it as code_snippet_imageLink
+            q.formatted_question = baseQuestion;
+            q.code_snippet_imageLink = q.code_image || null;
+            console.log(`📝 Question ${q.q_id} has code_snippet - using code_image: ${q.code_image || 'null'}`);
+          } else {
+            // No code snippet - handle normally
+            q.formatted_question = baseQuestion;
+            q.code_snippet_imageLink = null;
+          }
+          
+          return q;
+        });
+      };
+      
+      // Collect all available questions
+      let allEasyQuestions = [];
+      let allMediumQuestions = [];
+      let allHardQuestions = [];
+      
+      // Extract easy questions - try specific q_ids first, then fallback to first 4 available
+      if (questionnaire.easy && Array.isArray(questionnaire.easy)) {
+        const easyQIds = [1, 2, 3, 4, 5];
+        let easyQuestions = questionnaire.easy.filter(q => easyQIds.includes(q.q_id));
+        
+        // If we don't have 4 questions from specific IDs, take first 4 available
+        if (easyQuestions.length < 4) {
+          if (questionnaire.easy.length >= 4) {
+            console.log(`⚠️  Only found ${easyQuestions.length} easy questions with q_ids 1-5, using first 4 available instead`);
+            easyQuestions = questionnaire.easy.slice(0, 4);
+          } else if (questionnaire.easy.length > 0) {
+            console.log(`⚠️  Only found ${easyQuestions.length} easy questions with q_ids 1-5, and only ${questionnaire.easy.length} total available. Using all available.`);
+            easyQuestions = questionnaire.easy.slice(0, Math.min(4, questionnaire.easy.length));
+          }
+        }
+        
+        allEasyQuestions = processCybersecurityQuestions(easyQuestions);
+        console.log(`📋 Found ${allEasyQuestions.length} easy questions`);
+      }
+
+      // Extract medium questions - try specific q_ids first, then fallback to first 3 available
+      if (questionnaire.medium && Array.isArray(questionnaire.medium)) {
+        const mediumQIds = [11, 12, 13];
+        let mediumQuestions = questionnaire.medium.filter(q => mediumQIds.includes(q.q_id));
+        
+        // If we don't have 3 questions from specific IDs, take first 3 available
+        if (mediumQuestions.length < 3) {
+          if (questionnaire.medium.length >= 3) {
+            console.log(`⚠️  Only found ${mediumQuestions.length} medium questions with q_ids 11-13, using first 3 available instead`);
+            mediumQuestions = questionnaire.medium.slice(0, 3);
+          } else if (questionnaire.medium.length > 0) {
+            console.log(`⚠️  Only found ${mediumQuestions.length} medium questions with q_ids 11-13, and only ${questionnaire.medium.length} total available. Using all available.`);
+            mediumQuestions = questionnaire.medium.slice(0, Math.min(3, questionnaire.medium.length));
+          }
+        }
+        
+        allMediumQuestions = processCybersecurityQuestions(mediumQuestions);
+        console.log(`📋 Found ${allMediumQuestions.length} medium questions`);
+      }
+
+      // Extract hard questions - try specific q_ids first, then fallback to first 3 available
+      if (questionnaire.hard && Array.isArray(questionnaire.hard)) {
+        const hardQIds = [17, 18];
+        let hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
+        
+        // If we don't have 3 questions from specific IDs, take first 3 available
+        if (hardQuestions.length < 3) {
+          if (questionnaire.hard.length >= 3) {
+            console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, using first 3 available instead`);
+            hardQuestions = questionnaire.hard.slice(0, 3);
+          } else if (questionnaire.hard.length > 0) {
+            console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, and only ${questionnaire.hard.length} total available. Using all available.`);
+            hardQuestions = questionnaire.hard.slice(0, Math.min(3, questionnaire.hard.length));
+          }
+        }
+        
+        allHardQuestions = processCybersecurityQuestions(hardQuestions);
+        console.log(`📋 Found ${allHardQuestions.length} hard questions`);
+      }
+
+      // CRITICAL RULE: Always maintain exact question distribution
+      // Easy: 4 questions (positions 1-4, quiz_id 1-4)
+      // Medium: 3 questions (positions 5-7, quiz_id 5-7)
+      // Hard: 3 questions (positions 8-10, quiz_id 8-10)
+      // Total: 10 questions
+      const targetTotal = 10;
+      const easyCount = Math.min(4, allEasyQuestions.length);   // Always try to get 4
+      const mediumCount = Math.min(3, allMediumQuestions.length); // Always try to get 3
+      const hardCount = Math.min(3, allHardQuestions.length);   // Always try to get 3
+      
+      const totalPlanned = easyCount + mediumCount + hardCount;
+      if (totalPlanned !== targetTotal) {
+        console.log(`⚠️  Planned distribution is ${totalPlanned} (Easy ${easyCount}, Medium ${mediumCount}, Hard ${hardCount}). Some categories may have insufficient questions.`);
+      }
+      
+      // Add questions to the final array with sequential quiz_id based on final position (1-10)
+      let questionNumber = 1;
+      
+      // Easy questions: positions 1-4 (quiz_id 1-4)
+      allEasyQuestions.slice(0, easyCount).forEach((q, index) => {
+        questions.push({
+          ...q,
+          question_type: 'Easy',
+          unique_quiz_id: `${questionNumber}`,
+          // Ensure code_snippet_imageLink is included (null if not present)
+          code_snippet_imageLink: q.code_snippet_imageLink || null
+        });
+        questionNumber++;
+      });
+
+      // Medium questions: positions 5-7 (quiz_id 5-7)
+      // Ensure first selected (Q5) has scenario if possible
+      if (mediumCount > 0) {
+        const hasScenario = (q) => (q.scenario_title && q.scenario_title.trim() !== '') || (q.text_context && q.text_context.trim() !== '');
+        const mediumWithScenarioIndex = allMediumQuestions.findIndex(hasScenario);
+        const mediumSelected = [];
+        if (mediumWithScenarioIndex !== -1) {
+          // Put the one with scenario first
+          mediumSelected.push(allMediumQuestions[mediumWithScenarioIndex]);
+          // Fill remaining from others excluding the chosen one
+          for (let i = 0; i < allMediumQuestions.length && mediumSelected.length < mediumCount; i++) {
+            if (i === mediumWithScenarioIndex) continue;
+            mediumSelected.push(allMediumQuestions[i]);
+          }
+        } else {
+          // No scenario present, fallback to first N
+          mediumSelected.push(...allMediumQuestions.slice(0, mediumCount));
+        }
+        mediumSelected.forEach((q) => {
+          questions.push({
+            ...q,
+            question_type: 'Medium',
+            unique_quiz_id: `${questionNumber}`,
+            // Ensure code_snippet_imageLink is included (null if not present)
+            code_snippet_imageLink: q.code_snippet_imageLink || null
+          });
+          questionNumber++;
+        });
+      }
+
+      // Hard questions: positions 8-10 (quiz_id 8-10)
+      // Ensure first selected (Q8) has scenario if possible
+      if (hardCount > 0) {
+        const hasScenario = (q) => (q.scenario_title && q.scenario_title.trim() !== '') || (q.text_context && q.text_context.trim() !== '');
+        const hardWithScenarioIndex = allHardQuestions.findIndex(hasScenario);
+        const hardSelected = [];
+        if (hardWithScenarioIndex !== -1) {
+          // Put the one with scenario first
+          hardSelected.push(allHardQuestions[hardWithScenarioIndex]);
+          // Fill remaining from others excluding the chosen one
+          for (let i = 0; i < allHardQuestions.length && hardSelected.length < hardCount; i++) {
+            if (i === hardWithScenarioIndex) continue;
+            hardSelected.push(allHardQuestions[i]);
+          }
+        } else {
+          // No scenario present, fallback to first N
+          hardSelected.push(...allHardQuestions.slice(0, hardCount));
+        }
+        hardSelected.forEach((q) => {
+          questions.push({
+            ...q,
+            question_type: 'Hard',
+            unique_quiz_id: `${questionNumber}`,
+            // Ensure code_snippet_imageLink is included (null if not present)
+            code_snippet_imageLink: q.code_snippet_imageLink || null
+          });
+          questionNumber++;
+        });
+      }
+
+      console.log(`📋 Final distribution (ordered): ${easyCount} Easy (1-4), ${mediumCount} Medium (5-7), ${hardCount} Hard (8-10) = ${questions.length} total questions`);
+      
+      // If we still don't have exactly 10 questions, log a warning
+      if (questions.length !== targetTotal) {
+        console.log(`⚠️  Warning: Could only get ${questions.length} questions (target: ${targetTotal})`);
+      }
+      
+      return questions;
+    } catch (error) {
+      console.error('❌ Error extracting cybersecurity questions:', error.message);
+      throw new Error(`Failed to extract cybersecurity questions: ${error.message}`);
     }
   }
 }

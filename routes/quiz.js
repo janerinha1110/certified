@@ -1946,6 +1946,565 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
   }
 });
 
+/**
+ * @swagger
+ * /api/start_quiz_clone_v4_cybersecurity:
+ *   post:
+ *     summary: Start a quiz session (clone v4 cybersecurity) with optional subject resolution via API
+ *     description: Same as /api/start_quiz_clone_v3 but specifically for cybersecurity quizzes with different response format. When questions have code_snippet, the code_image URL is stored in code_snippet_imageLink instead of appending code to question text. Email parameter is optional or can be empty string. You can provide either 'subject' directly OR 'list' and 'option' to resolve subject from API.
+ *     tags: [Quiz]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - phone
+ *             properties:
+ *               phone:
+ *                 type: string
+ *                 description: User's phone number
+ *                 example: "918007880283"
+ *               subject:
+ *                 type: string
+ *                 description: Subject/course name (optional - provide this OR list+option)
+ *                 example: "Cybersecurity"
+ *               list:
+ *                 type: string
+ *                 description: List of subjects (optional - provide this with option to resolve subject via API)
+ *                 example: "1. Agile Methodologies\n2. Scrum Master\n3. Risk Management\n4. Stakeholder Management\n5. Communication Skills"
+ *               option:
+ *                 type: string
+ *                 description: Selected option from list (optional - provide this with list to resolve subject via API)
+ *                 example: "2"
+ *               name:
+ *                 type: string
+ *                 description: User's name (optional)
+ *                 example: "John Doe"
+ *               email:
+ *                 type: string
+ *                 description: User's email (optional, can be empty string - will be updated later by auto_submit_quiz_v2)
+ *                 example: "john@example.com"
+ *               session_id:
+ *                 type: string
+ *                 description: Existing session ID (optional)
+ *                 example: "uuid"
+ *           examples:
+ *             with_list_and_option:
+ *               summary: With list and option (subject resolution via API)
+ *               value:
+ *                 name: "John Doe"
+ *                 email: "john@example.com"
+ *                 phone: "918007880283"
+ *                 subject: ""
+ *                 list: "1. Agile Methodologies\n2. Scrum Master\n3. Risk Management\n4. Stakeholder Management\n5. Communication Skills"
+ *                 option: "2"
+ *             with_direct_subject:
+ *               summary: With subject provided directly
+ *               value:
+ *                 name: "John Doe"
+ *                 email: "john@example.com"
+ *                 phone: "918007880283"
+ *                 subject: "Cybersecurity"
+ *             without_email:
+ *               summary: Without email (email optional)
+ *               value:
+ *                 name: "John Doe"
+ *                 phone: "918007880283"
+ *                 subject: "Cybersecurity"
+ *             empty_email:
+ *               summary: With empty email string (will be updated by auto_submit_quiz_v2)
+ *               value:
+ *                 name: "John Doe"
+ *                 email: ""
+ *                 phone: "918007880283"
+ *                 subject: "Cybersecurity"
+ *     responses:
+ *       201:
+ *         description: Quiz started successfully (clone v4 cybersecurity)
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/StartQuizResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: object
+ *                       properties:
+ *                         question_added:
+ *                           type: boolean
+ *                           description: True if questions were stored in this call; false otherwise
+ *                           example: true
+ *                         first_question:
+ *                           type: object
+ *                           nullable: true
+ *                           properties:
+ *                             question_id:
+ *                               type: string
+ *                               format: uuid
+ *                             question:
+ *                               type: string
+ *                             code_snippet_imageLink:
+ *                               type: string
+ *                               nullable: true
+ *                               description: URL to code image if question has code snippet, null otherwise
+ *                               example: "https://certified-fallback.s3.amazonaws.com/code-1.png"
+ *                             has_code_image:
+ *                               type: boolean
+ *                               description: True if code_snippet_imageLink has a non-empty value
+ *                               example: true
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+/**
+ * Clone of start_quiz_clone_v3 specifically for cybersecurity quizzes with different response format.
+ * Behavior:
+ * - Email is optional or can be empty string; email can be updated later using auto_submit_quiz_v2
+ * - Subject can be provided directly OR resolved via API using list and option
+ * - If user+subject not found: runs the normal start_quiz flow
+ * - If user exists: uses provided session_id or latest session; if no session, creates one
+ * - If session has no questions: tries generate; if generate result has empty arrays, skip storing
+ * - Uses extractQuestionsCybersecurity() which handles code_image differently:
+ *   - When code_snippet is not empty, extracts code_image and stores in code_snippet_imageLink column
+ *   - Does NOT append code snippet to question text (unlike regular extractQuestions)
+ * - Returns same schema as start_quiz_clone_v3, plus question_added: true/false
+ * - first_question always includes code_snippet_imageLink (null if empty) and has_code_image (boolean)
+ */
+router.post('/start_quiz_clone_v4_cybersecurity', validateStartQuizCloneV3, async (req, res) => {
+  try {
+    const { name, email, phone, subject, list, option, session_id: providedSessionId } = req.body;
+
+    // Track quiz started (subject may be determined later)
+    mixpanelService.trackQuizStarted({
+      email: email || '',
+      phone,
+      name,
+      subject: subject || 'pending',
+      endpoint: 'start_quiz_clone_v4_cybersecurity',
+      list,
+      option
+    });
+
+    // Use email as provided (can be empty string or undefined)
+    const userEmail = email || '';
+
+    // Determine the subject to use
+    let finalSubject = subject; // Default to provided subject
+    
+    // If subject not provided, try to get from API using list and option
+    if (!subject || subject.trim() === '') {
+      if (list && option && list.trim() !== '' && option.trim() !== '') {
+        console.log('📞 Calling API to get subject from list and option...');
+        try {
+          finalSubject = await certifiedApiService.getSubjectFromList(list, option);
+          console.log('✅ Received subject from API:', finalSubject);
+        } catch (error) {
+          console.error('❌ Error getting subject from API:', error.message);
+          return res.status(500).json({
+            success: false,
+            message: 'Failed to get subject from list and option',
+            error: error.message
+          });
+        }
+      }
+    }
+    
+    // Validate finalSubject exists
+    if (!finalSubject || finalSubject.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Subject is required. Either provide subject directly or provide list and option to get subject.'
+      });
+    }
+
+    // Find or create user
+    let user;
+    
+    // First, try to lookup by phone only (regardless of subject)
+    const phoneOnlyLookupQuery = `
+      SELECT id, name, email, phone, subject, created_at
+      FROM users
+      WHERE phone = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    const phoneOnlyRes = await query(phoneOnlyLookupQuery, [phone]);
+    
+    if (phoneOnlyRes.rows.length > 0) {
+      const foundUser = phoneOnlyRes.rows[0];
+      
+      // Check if subject matches
+      if (foundUser.subject === finalSubject) {
+        // Subject matches - use the user as is
+        user = foundUser;
+        console.log('✅ Found user by phone with matching subject');
+      } else {
+        // Subject doesn't match - update the user's subject to match request
+        console.log(`⚠️  User found by phone but subject mismatch. Updating subject from "${foundUser.subject}" to "${finalSubject}"`);
+        const updateSubjectQuery = `
+          UPDATE users
+          SET subject = $1, updated_at = NOW()
+          WHERE id = $2
+          RETURNING id, name, email, phone, subject, created_at
+        `;
+        const updateRes = await query(updateSubjectQuery, [finalSubject, foundUser.id]);
+        user = updateRes.rows[0];
+        console.log('✅ Updated user subject to match request');
+      }
+    } else {
+      // User not found by phone - create new user
+      if (!name) {
+        return res.status(400).json({
+          success: false,
+          message: 'User not found. Provide name to create a new user.'
+        });
+      }
+      
+      // Create new user
+      if (userEmail && userEmail.trim() !== '') {
+        // Email provided - use userService.createUser
+        user = await userService.createUser({ name, email: userEmail, phone, subject: finalSubject });
+      } else {
+        // Email is empty or not provided - create directly with empty string
+        // Email column has NOT NULL constraint, so we must use empty string, not NULL
+        try {
+          console.log('📝 Creating new user with empty email');
+          const createUserQuery = `
+            INSERT INTO users(name, email, phone, subject, created_at)
+            VALUES ($1, '', $2, $3, NOW())
+            RETURNING id, name, email, phone, subject, created_at
+          `;
+          const createRes = await query(createUserQuery, [name, phone, finalSubject]);
+          user = createRes.rows[0];
+          console.log('✅ Created new user with ID:', user.id);
+        } catch (createError) {
+          // If duplicate key error (email UNIQUE constraint), find existing user with empty email
+          if (createError.code === '23505' && createError.constraint === 'users_email_key') {
+            console.log('⚠️  User with empty email already exists (UNIQUE constraint), finding by phone');
+            // Try to find user with empty email and matching phone
+            const findEmptyEmailQuery = `
+              SELECT id, name, email, phone, subject, created_at
+              FROM users
+              WHERE email = '' AND phone = $1
+              ORDER BY created_at DESC
+              LIMIT 1
+            `;
+            const findRes = await query(findEmptyEmailQuery, [phone]);
+            if (findRes.rows.length > 0) {
+              // Found user with empty email - update subject
+              const updateSubjectQuery = `
+                UPDATE users
+                SET subject = $1, updated_at = NOW()
+                WHERE id = $2
+                RETURNING id, name, email, phone, subject, created_at
+              `;
+              const updateRes = await query(updateSubjectQuery, [finalSubject, findRes.rows[0].id]);
+              user = updateRes.rows[0];
+              console.log('✅ Found user with empty email and updated subject');
+            } else {
+              // User with empty email exists but for different phone
+              // Update the existing user's phone and subject to match
+              console.log('⚠️  User with empty email exists for different phone, updating...');
+              const updateUserQuery = `
+                UPDATE users
+                SET phone = $1, subject = $2, updated_at = NOW()
+                WHERE email = ''
+                RETURNING id, name, email, phone, subject, created_at
+              `;
+              const updateRes = await query(updateUserQuery, [phone, finalSubject]);
+              if (updateRes.rows.length > 0) {
+                user = updateRes.rows[0];
+                console.log('✅ Updated existing user with empty email to match phone+subject');
+              } else {
+                throw new Error('Failed to update user with empty email');
+              }
+            }
+          } else {
+            throw createError;
+          }
+        }
+      }
+    }
+
+    // Resolve session: use provided session_id or latest for user
+    let session;
+    if (providedSessionId) {
+      // Only accept provided session if it belongs to this user and subject
+      const sessRes = await query(
+        'SELECT id, user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at FROM sessions WHERE id = $1 AND user_id = $2 AND subject = $3',
+        [providedSessionId, user.id, finalSubject]
+      );
+      session = sessRes.rows[0] || null;
+    }
+    if (!session) {
+      // Strictly fetch the latest session for this user and this subject
+      const latestSessionQuery = `
+        SELECT id, user_id, certified_user_id, certified_token, certified_token_expires_at, subject, created_at
+        FROM sessions
+        WHERE user_id = $1 AND subject = $2
+        ORDER BY created_at DESC
+        LIMIT 1
+      `;
+      const sres = await query(latestSessionQuery, [user.id, finalSubject]);
+      session = sres.rows[0] || null;
+    }
+
+    // If no session, create one via certified API then create session record
+    let certifiedSkillId;
+    let certifiedResponse = null;
+    if (!session) {
+      certifiedResponse = await certifiedApiService.createNewEntry(finalSubject);
+      if (certifiedResponse.result !== 'success') {
+        throw new Error(`Certified API error: ${certifiedResponse.message}`);
+      }
+      certifiedSkillId = certifiedResponse.data.id;
+      const certifiedToken = userService.generateCertifiedToken();
+      const tokenExpiration = userService.getTokenExpirationTime();
+      session = await userService.createSession(
+        user.id,
+        certifiedSkillId,
+        certifiedToken,
+        tokenExpiration,
+        finalSubject
+      );
+    } else {
+      certifiedSkillId = parseInt(session.certified_user_id);
+    }
+
+    // Prepare quiz info (will update below)
+    let quizInfo = {
+      total_questions: 0,
+      questions_generated: false,
+      question_types: { easy: 0, medium: 0, hard: 0 }
+    };
+
+    // Check if questions already exist for this session
+    // CRITICAL: question_added should only be true when exactly 10 questions are stored
+    const existingQuestions = await questionService.getQuestionsBySession(session.id);
+    let questionAdded = existingQuestions && existingQuestions.length === 10;
+    if (questionAdded) {
+      quizInfo = {
+        total_questions: existingQuestions.length,
+        questions_generated: true,
+        question_types: { easy: 0, medium: 0, hard: 0 }
+      };
+    } else if (existingQuestions && existingQuestions.length > 0 && existingQuestions.length < 10) {
+      // Partial questions exist but not all 10 - set to false and continue polling
+      console.log(`⚠️  Only ${existingQuestions.length} questions found (need 10). question_added will be false.`);
+      quizInfo = {
+        total_questions: existingQuestions.length,
+        questions_generated: false,
+        question_types: { easy: 0, medium: 0, hard: 0 }
+      };
+    }
+
+    // If no questions, start background polling (non-blocking)
+    if (!questionAdded) {
+      console.log('🔄 Starting background polling for quiz generation...');
+      
+      // Start polling in background - don't await, let it run asynchronously
+      // This ensures API response returns immediately within timeout limit
+      (async () => {
+        const pollDelay = 3000; // 3 seconds between polls
+        const maxPollingTime = 90000; // 90 seconds maximum
+        const startTime = Date.now();
+        let attempt = 0;
+        let questionAddedInBackground = false;
+        let quizData;
+        
+        try {
+          while (!questionAddedInBackground && (Date.now() - startTime) < maxPollingTime) {
+            attempt++;
+            const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+            
+            try {
+              console.log(`🔄 [Background] Polling generate API (attempt ${attempt}, ${elapsedTime}s elapsed) for session ${session.id}...`);
+              quizData = await generateQuizService.generateQuiz(certifiedSkillId);
+              
+              // Check if we have questions available in all three arrays
+              const questionnaire = quizData?.data?.quiz_question_answer?.questionaire || {};
+              const easyArr = Array.isArray(questionnaire.easy) ? questionnaire.easy : [];
+              const medArr = Array.isArray(questionnaire.medium) ? questionnaire.medium : [];
+              const hardArr = Array.isArray(questionnaire.hard) ? questionnaire.hard : [];
+              const totalQuestionsAvailable = easyArr.length + medArr.length + hardArr.length;
+              
+              console.log(`📊 [Background] Quiz data received - Status: ${quizData?.data?.quiz_status || 'unknown'}, Questions available: ${totalQuestionsAvailable} (Easy: ${easyArr.length}, Medium: ${medArr.length}, Hard: ${hardArr.length}) for session ${session.id}`);
+              
+              // Check if all three arrays have questions populated
+              const hasEasyQuestions = easyArr.length > 0;
+              const hasMediumQuestions = medArr.length > 0;
+              const hasHardQuestions = hardArr.length > 0;
+              const allArraysPopulated = hasEasyQuestions && hasMediumQuestions && hasHardQuestions;
+              
+              // If we have questions available, try to extract and store them
+              if (totalQuestionsAvailable > 0) {
+                if (allArraysPopulated) {
+                  console.log(`✅ [Background] All question arrays are populated! Extracting questions for session ${session.id}...`);
+                } else {
+                  console.log(`⚠️  [Background] Not all arrays populated yet (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}. Continuing to poll...`);
+                }
+                
+                // Only extract and store when all arrays are populated AND we have exactly 10 questions
+                // Keep polling until we have all 10 questions ready
+                if (allArraysPopulated) {
+                  try {
+                    const questions = generateQuizService.extractQuestionsCybersecurity(quizData);
+                    // CRITICAL: Only store in database if we have exactly 10 questions
+                    if (questions.length === 10) {
+                      console.log(`✅ [Background] Extracted exactly 10 questions, storing in database for session ${session.id}...`);
+                      await questionService.createQuestions(questions, session.id, user.id);
+                      questionAddedInBackground = true;
+                      
+                      // Track questions generated
+                      mixpanelService.trackQuizQuestionsGenerated({
+                        user_id: user.id,
+                        session_id: session.id,
+                        email: user.email || '',
+                        phone: user.phone,
+                        subject: subject,
+                        total_questions: questions.length,
+                        question_types: {
+                          easy: questions.filter(q => q.question_type === 'Easy').length,
+                          medium: questions.filter(q => q.question_type === 'Medium').length,
+                          hard: questions.filter(q => q.question_type === 'Hard').length
+                        }
+                      });
+                      
+                      console.log(`✅ [Background] Successfully stored all 10 questions for session ${session.id}!`);
+                      break; // Exit polling loop on success
+                    } else {
+                      console.log(`⏳ [Background] All arrays populated but only extracted ${questions.length} questions (need exactly 10). Continuing to poll for session ${session.id}...`);
+                      // Continue polling - don't store partial questions
+                    }
+                  } catch (extractError) {
+                    console.error(`❌ [Background] Error extracting questions for session ${session.id}:`, extractError.message);
+                    // Continue polling
+                  }
+                } else {
+                  console.log(`⏳ [Background] Waiting for all arrays to be populated (Easy: ${hasEasyQuestions}, Medium: ${hasMediumQuestions}, Hard: ${hasHardQuestions}) for session ${session.id}...`);
+                }
+              } else {
+                console.log(`⏳ [Background] No questions available yet for session ${session.id}, continuing to poll...`);
+              }
+              
+              // Wait before next poll (unless we're done)
+              if (!questionAddedInBackground && (Date.now() - startTime) < maxPollingTime) {
+                await new Promise(resolve => setTimeout(resolve, pollDelay));
+              }
+              
+            } catch (e) {
+              console.error(`❌ [Background] Quiz generation API error (attempt ${attempt}) for session ${session.id}:`, e.message);
+              // Wait before retrying even on error
+              if ((Date.now() - startTime) < maxPollingTime) {
+                await new Promise(resolve => setTimeout(resolve, pollDelay));
+              }
+            }
+          }
+          
+          if (!questionAddedInBackground) {
+            const totalElapsed = Math.round((Date.now() - startTime) / 1000);
+            console.warn(`⚠️  [Background] Polling timeout reached after ${totalElapsed}s for session ${session.id}. Questions may not be generated yet.`);
+            // Track generation failure due to timeout
+            mixpanelService.trackQuizQuestionsGenerationFailed({
+              user_id: user.id,
+              session_id: session.id,
+              email: user.email || '',
+              phone: user.phone,
+              subject: subject,
+              error_message: `Polling timeout after ${totalElapsed}s`
+            });
+          }
+        } catch (error) {
+          console.error(`❌ [Background] Fatal error in polling loop for session ${session.id}:`, error);
+          // Track fatal error
+          mixpanelService.trackQuizQuestionsGenerationFailed({
+            user_id: user.id,
+            session_id: session.id,
+            email: user.email || '',
+            phone: user.phone,
+            subject: subject,
+            error_message: error.message
+          });
+        }
+      })(); // Immediately invoke async function - runs in background
+      
+      // Note: We're not awaiting the background task, so response returns immediately
+      console.log('✅ Background polling started - API will return response immediately');
+    }
+
+    // Prepare quiz info and first question similar to start_quiz
+    const finalQuestions = await questionService.getQuestionsBySession(session.id);
+    // Ensure total reflects DB state; preserve type counts if already computed
+    quizInfo.total_questions = finalQuestions.length;
+    quizInfo.questions_generated = finalQuestions.length === 10; // Only true when exactly 10 questions
+    
+    // CRITICAL: Recalculate questionAdded based on final count - must be exactly 10
+    questionAdded = finalQuestions.length === 10;
+
+    let firstQuestion = null;
+    if (finalQuestions.length > 0) {
+      firstQuestion = finalQuestions[0];
+    }
+
+    // Determine message based on question status
+    let responseMessage = 'Quiz started successfully';
+    if (!questionAdded) {
+      if (finalQuestions.length === 0) {
+        responseMessage = 'Quiz started successfully. Questions are being generated in the background. Please check back in a few moments.';
+      } else if (finalQuestions.length < 10) {
+        responseMessage = `Quiz started successfully. ${finalQuestions.length} questions generated so far (need 10). Questions are being generated in the background. Please check back in a few moments.`;
+      }
+    }
+    
+    return res.status(201).json({
+      success: true,
+      message: responseMessage,
+      data: {
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          subject: user.subject,
+          created_at: user.created_at
+        },
+        certified_skill: {
+          id: certifiedSkillId,
+          subject_name: (certifiedResponse && certifiedResponse.data && certifiedResponse.data.subject_name) ? certifiedResponse.data.subject_name : finalSubject,
+          quiz_status: (certifiedResponse && certifiedResponse.data && certifiedResponse.data.quiz_status) ? certifiedResponse.data.quiz_status : 'unknown',
+          is_paid: (certifiedResponse && certifiedResponse.data && typeof certifiedResponse.data.is_paid !== 'undefined') ? certifiedResponse.data.is_paid : false
+        },
+        session: {
+          id: session.id,
+          certified_token: session.certified_token,
+          token_expiration: session.certified_token_expires_at
+        },
+        quiz: quizInfo,
+        first_question: firstQuestion ? {
+          question_id: firstQuestion.id,
+          question: firstQuestion.question,
+          code_snippet_imageLink: firstQuestion.code_snippet_imageLink || null,
+          has_code_image: !!(firstQuestion.code_snippet_imageLink && firstQuestion.code_snippet_imageLink.trim() !== '')
+        } : null,
+        question_added: questionAdded
+      }
+    });
+  } catch (error) {
+    console.error('Error in start_quiz_clone_v4_cybersecurity endpoint:', error);
+    console.error('Error stack:', error.stack);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
 // Validation middleware for save answer
 const validateSaveAnswer = [
   body('question_id').isUUID().withMessage('question_id must be a valid UUID'),
