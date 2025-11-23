@@ -410,7 +410,12 @@ class GenerateQuizService {
 
   // Format bash script into readable format
   formatBashScript(markdownText) {
-    return `*Bash Script*\n\n\`\`\`bash\n${markdownText}\n\`\`\``;
+    // Clean up: remove backslashes and normalize newlines (in case normalization didn't catch everything)
+    let cleaned = markdownText
+      .replace(/\\/g, '')
+      .replace(/nn/g, '\n')
+      .trim();
+    return `*Bash Script*\n\n\`\`\`bash\n${cleaned}\n\`\`\``;
   }
 
   // Format security logs into readable format
@@ -456,7 +461,15 @@ class GenerateQuizService {
       return '';
     }
 
-    const normalized = markdownText.trim();
+    // Normalize markdown: handle various newline formats and remove backslashes
+    let normalized = markdownText
+      // First, handle escaped newlines in JSON strings
+      .replace(/\\n/g, '\n')
+      // Handle literal "nn" that might appear instead of newlines (fallback)
+      .replace(/nn/g, '\n')
+      // Remove all backslashes (they're not needed for formatting)
+      .replace(/\\/g, '')
+      .trim();
 
     // Detection order matters - check more specific patterns first
     
