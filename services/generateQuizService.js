@@ -255,6 +255,226 @@ class GenerateQuizService {
     }
   }
 
+  // Format HTTP log entries into readable format
+  formatHttpLogs(markdownText) {
+    try {
+      // Pattern: IP - - [DD/MMM/YYYY:HH:MM:SS] "METHOD /path HTTP/1.1" status_code
+      // Handle cases where HTTP/1.1 might be in the path or separate
+      const logPattern = /(\d+\.\d+\.\d+\.\d+)\s+-\s+-\s+\[(\d{2})\/(\w+)\/(\d{4}):(\d{2}):(\d{2}):(\d{2})\]\s+"(\w+)\s+([^"]+)"\s+(\d+)/g;
+      
+      const logs = [];
+      let match;
+      let firstDate = null;
+      let firstIP = null;
+      const statusCodes = new Set();
+      
+      while ((match = logPattern.exec(markdownText)) !== null) {
+        const ip = match[1];
+        const day = match[2];
+        const month = match[3];
+        const year = match[4];
+        const hour = match[5];
+        const minute = match[6];
+        const second = match[7];
+        const method = match[8];
+        let path = match[9].trim();
+        const statusCode = match[10];
+        
+        // Remove HTTP/1.1 or HTTP/1.0 from path if present
+        path = path.replace(/\s+HTTP\/[\d.]+$/, '');
+        
+        if (!firstDate) {
+          firstDate = `${day}/${month}/${year}`;
+          firstIP = ip;
+        }
+        
+        statusCodes.add(statusCode);
+        logs.push({
+          time: `${hour}:${minute}:${second}`,
+          method,
+          path,
+          statusCode
+        });
+      }
+      
+      if (logs.length === 0) {
+        // Fallback if pattern doesn't match
+        return `\`\`\`\n${markdownText}\n\`\`\``;
+      }
+      
+      // Build formatted output
+      let formatted = `*Server Logs - ${firstDate}*\n\n`;
+      formatted += `IP: ${firstIP}\n\n`;
+      
+      logs.forEach(log => {
+        formatted += `${log.time} → ${log.method} ${log.path} (${log.statusCode})\n`;
+      });
+      
+      // Add status summary
+      const uniqueStatusCodes = Array.from(statusCodes);
+      if (uniqueStatusCodes.length === 1) {
+        const code = uniqueStatusCodes[0];
+        if (code.startsWith('4') || code.startsWith('5')) {
+          formatted += `\nStatus: All failed (${code} errors)`;
+        } else {
+          formatted += `\nStatus: All ${code}`;
+        }
+      } else {
+        formatted += `\nStatus: Mixed responses (${uniqueStatusCodes.join(', ')})`;
+      }
+      
+      return formatted;
+    } catch (error) {
+      console.error('Error formatting HTTP logs:', error);
+      return `\`\`\`\n${markdownText}\n\`\`\``;
+    }
+  }
+
+  // Format process list into readable format
+  formatProcessList(markdownText) {
+    try {
+      const lines = markdownText.split('\n').filter(line => line.trim());
+      if (lines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
+      
+      // Find header line
+      const headerIndex = lines.findIndex(line => /PID\s+USER/i.test(line));
+      if (headerIndex === -1) return `\`\`\`\n${markdownText}\n\`\`\``;
+      
+      let formatted = '*Process List*\n\n';
+      
+      // Add header
+      formatted += `${lines[headerIndex]}\n\n`;
+      
+      // Add process entries
+      for (let i = headerIndex + 1; i < lines.length; i++) {
+        formatted += `${lines[i]}\n`;
+      }
+      
+      return formatted;
+    } catch (error) {
+      console.error('Error formatting process list:', error);
+      return `\`\`\`\n${markdownText}\n\`\`\``;
+    }
+  }
+
+  // Format network traffic table into readable format
+  formatNetworkTraffic(markdownText) {
+    try {
+      const lines = markdownText.split('\n').filter(line => line.trim());
+      if (lines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
+      
+      let formatted = '*Network Traffic*\n\n';
+      
+      lines.forEach(line => {
+        formatted += `${line}\n`;
+      });
+      
+      return formatted;
+    } catch (error) {
+      console.error('Error formatting network traffic:', error);
+      return `\`\`\`\n${markdownText}\n\`\`\``;
+    }
+  }
+
+  // Format JSON policy into readable format
+  formatJsonPolicy(markdownText) {
+    try {
+      // Try to parse and pretty-print JSON
+      const jsonObj = JSON.parse(markdownText);
+      const prettyJson = JSON.stringify(jsonObj, null, 2);
+      return `*JSON Policy*\n\n\`\`\`json\n${prettyJson}\n\`\`\``;
+    } catch (error) {
+      // If not valid JSON, return as code block
+      return `\`\`\`json\n${markdownText}\n\`\`\``;
+    }
+  }
+
+  // Format bash script into readable format
+  formatBashScript(markdownText) {
+    return `*Bash Script*\n\n\`\`\`bash\n${markdownText}\n\`\`\``;
+  }
+
+  // Format security logs into readable format
+  formatSecurityLogs(markdownText) {
+    try {
+      // Pattern: [YYYY-MM-DDTHH:MM:SSZ] key=value pairs
+      const logPattern = /\[(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\]\s+(.+)/g;
+      
+      const logs = [];
+      let match;
+      
+      while ((match = logPattern.exec(markdownText)) !== null) {
+        const timestamp = match[1];
+        const content = match[2];
+        logs.push({ timestamp, content });
+      }
+      
+      if (logs.length === 0) {
+        return `\`\`\`\n${markdownText}\n\`\`\``;
+      }
+      
+      let formatted = '*Security Logs*\n\n';
+      
+      logs.forEach(log => {
+        formatted += `[${log.timestamp}]\n${log.content}\n\n`;
+      });
+      
+      return formatted.trim();
+    } catch (error) {
+      console.error('Error formatting security logs:', error);
+      return `\`\`\`\n${markdownText}\n\`\`\``;
+    }
+  }
+
+  // Default formatter (fallback)
+  formatDefault(markdownText) {
+    return `\`\`\`\n${markdownText}\n\`\`\``;
+  }
+
+  // Main function to detect content type and format accordingly
+  formatMarkdownContent(markdownText) {
+    if (!markdownText || markdownText.trim() === '') {
+      return '';
+    }
+
+    const normalized = markdownText.trim();
+
+    // Detection order matters - check more specific patterns first
+    
+    // 1. HTTP Logs: IP addresses, timestamps [DD/MMM/YYYY:HH:MM:SS], HTTP methods
+    if (/\d+\.\d+\.\d+\.\d+\s+-\s+-\s+\[\d{2}\/\w+\/\d{4}:\d{2}:\d{2}:\d{2}\]/.test(normalized)) {
+      return this.formatHttpLogs(normalized);
+    }
+
+    // 2. Security Logs: ISO timestamps [YYYY-MM-DDTHH:MM:SSZ]
+    if (/\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]/.test(normalized)) {
+      return this.formatSecurityLogs(normalized);
+    }
+
+    // 3. Process List: Headers with PID, USER, COMMAND
+    if (/PID\s+USER\s+COMMAND/i.test(normalized) || /^\s*\d+\s+\w+\s+/.test(normalized.split('\n')[0])) {
+      return this.formatProcessList(normalized);
+    }
+
+    // 4. Network Traffic: Headers with Source, Destination, Protocol
+    if (/Source\s+Destination\s+Protocol/i.test(normalized) || /Local Address\s+Remote Address/i.test(normalized)) {
+      return this.formatNetworkTraffic(normalized);
+    }
+
+    // 5. JSON: Starts with { or [
+    if (/^\s*[\{\[]/.test(normalized)) {
+      return this.formatJsonPolicy(normalized);
+    }
+
+    // 6. Bash Script: Starts with #!/bin/bash or contains bash keywords
+    if (/^#!/bin\/bash/.test(normalized) || /(while|if|for)\s+.*\s+do/.test(normalized)) {
+      return this.formatBashScript(normalized);
+    }
+
+    // 7. Fallback: Default code block
+    return this.formatDefault(normalized);
+  }
+
   extractQuestionsCybersecurity(quizData) {
     try {
       const questions = [];
@@ -287,10 +507,10 @@ class GenerateQuizService {
           // Rule 1: code_snippet is empty AND markdown is NOT empty → append markdown
           if (!hasCodeSnippet && hasMarkdown) {
             const normalizedMarkdown = markdownRaw.replace(/\r\n/g, '\n');
-            const markdownBlock = `\`\`\`\n${normalizedMarkdown}\n\`\`\``;
-            q.formatted_question = `${baseQuestion}\n\n${markdownBlock}`.trim();
+            const formattedMarkdown = this.formatMarkdownContent(normalizedMarkdown);
+            q.formatted_question = `${baseQuestion}\n\n${formattedMarkdown}`.trim();
             q.code_snippet_imageLink = null;
-            console.log(`📝 Question ${q.q_id} has markdown (no code_snippet) - appending markdown to question`);
+            console.log(`📝 Question ${q.q_id} has markdown (no code_snippet) - formatting and appending markdown to question`);
           }
           // Rule 2: markdown is empty AND code_snippet is NOT empty
           else if (hasCodeSnippet && !hasMarkdown) {
