@@ -333,27 +333,33 @@ class GenerateQuizService {
   // Format process list into readable format
   formatProcessList(markdownText) {
     try {
-      // Clean up escaped newlines and backslashes
-      let cleaned = markdownText.replace(/\\n/g, '\n').replace(/\\/g, '');
-      const lines = cleaned.split('\n').filter(line => line.trim());
-      if (lines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
+      // Clean up escaped newlines first
+      let cleaned = markdownText.replace(/\\n/g, '\n');
+      
+      // Split into lines and process each line
+      const rawLines = cleaned.split('\n');
+      const processedLines = rawLines.map(line => {
+        // Remove all backslashes (both escaped and literal)
+        let processed = line.replace(/\\/g, '');
+        // Trim whitespace
+        processed = processed.trim();
+        return processed;
+      }).filter(line => line.length > 0);
+      
+      if (processedLines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
       
       // Find header line
-      const headerIndex = lines.findIndex(line => /PID\s+USER/i.test(line));
+      const headerIndex = processedLines.findIndex(line => /PID\s+USER/i.test(line));
       if (headerIndex === -1) return `\`\`\`\n${markdownText}\n\`\`\``;
       
       let formatted = '*Process List*\n\n';
       
-      // Add header - trim backslashes from start and end
-      const header = lines[headerIndex].replace(/^\\+|\\+$/g, '').trim();
-      formatted += `${header}\n\n`;
+      // Add header
+      formatted += `${processedLines[headerIndex]}\n\n`;
       
-      // Add process entries - trim backslashes from start and end
-      for (let i = headerIndex + 1; i < lines.length; i++) {
-        const line = lines[i].replace(/^\\+|\\+$/g, '').trim();
-        if (line) {
-          formatted += `${line}\n`;
-        }
+      // Add process entries
+      for (let i = headerIndex + 1; i < processedLines.length; i++) {
+        formatted += `${processedLines[i]}\n`;
       }
       
       return formatted.trim();
