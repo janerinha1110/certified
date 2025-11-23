@@ -333,16 +333,17 @@ class GenerateQuizService {
   // Format process list into readable format
   formatProcessList(markdownText) {
     try {
-      // Clean up escaped newlines first
-      let cleaned = markdownText.replace(/\\n/g, '\n');
+      // First, remove ALL backslashes from the entire string (most aggressive)
+      let cleaned = markdownText.replace(/\\/g, '');
+      
+      // Then handle escaped newlines (in case there are any left)
+      cleaned = cleaned.replace(/\\n/g, '\n');
       
       // Split into lines and process each line
       const rawLines = cleaned.split('\n');
       const processedLines = rawLines.map(line => {
-        // Remove all backslashes (both escaped and literal)
-        let processed = line.replace(/\\/g, '');
-        // Trim whitespace
-        processed = processed.trim();
+        // Remove any remaining backslashes and trim
+        let processed = line.replace(/\\/g, '').trim();
         return processed;
       }).filter(line => line.length > 0);
       
