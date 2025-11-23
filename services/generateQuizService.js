@@ -344,12 +344,16 @@ class GenerateQuizService {
       
       let formatted = '*Process List*\n\n';
       
-      // Add header
-      formatted += `${lines[headerIndex]}\n\n`;
+      // Add header - trim backslashes from start and end
+      const header = lines[headerIndex].replace(/^\\+|\\+$/g, '').trim();
+      formatted += `${header}\n\n`;
       
-      // Add process entries
+      // Add process entries - trim backslashes from start and end
       for (let i = headerIndex + 1; i < lines.length; i++) {
-        formatted += `${lines[i]}\n`;
+        const line = lines[i].replace(/^\\+|\\+$/g, '').trim();
+        if (line) {
+          formatted += `${line}\n`;
+        }
       }
       
       return formatted.trim();
@@ -369,8 +373,12 @@ class GenerateQuizService {
       
       let formatted = '*Network Traffic*\n\n';
       
+      // Trim backslashes from start and end of each line
       lines.forEach(line => {
-        formatted += `${line}\n`;
+        const cleanedLine = line.replace(/^\\+|\\+$/g, '').trim();
+        if (cleanedLine) {
+          formatted += `${cleanedLine}\n`;
+        }
       });
       
       return formatted.trim();
