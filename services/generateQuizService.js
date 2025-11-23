@@ -333,7 +333,9 @@ class GenerateQuizService {
   // Format process list into readable format
   formatProcessList(markdownText) {
     try {
-      const lines = markdownText.split('\n').filter(line => line.trim());
+      // Clean up escaped newlines and backslashes
+      let cleaned = markdownText.replace(/\\n/g, '\n').replace(/\\/g, '');
+      const lines = cleaned.split('\n').filter(line => line.trim());
       if (lines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
       
       // Find header line
@@ -350,7 +352,7 @@ class GenerateQuizService {
         formatted += `${lines[i]}\n`;
       }
       
-      return formatted;
+      return formatted.trim();
     } catch (error) {
       console.error('Error formatting process list:', error);
       return `\`\`\`\n${markdownText}\n\`\`\``;
@@ -360,7 +362,9 @@ class GenerateQuizService {
   // Format network traffic table into readable format
   formatNetworkTraffic(markdownText) {
     try {
-      const lines = markdownText.split('\n').filter(line => line.trim());
+      // Clean up escaped newlines and backslashes
+      let cleaned = markdownText.replace(/\\n/g, '\n').replace(/\\/g, '');
+      const lines = cleaned.split('\n').filter(line => line.trim());
       if (lines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
       
       let formatted = '*Network Traffic*\n\n';
@@ -369,7 +373,7 @@ class GenerateQuizService {
         formatted += `${line}\n`;
       });
       
-      return formatted;
+      return formatted.trim();
     } catch (error) {
       console.error('Error formatting network traffic:', error);
       return `\`\`\`\n${markdownText}\n\`\`\``;
