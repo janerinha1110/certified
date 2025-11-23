@@ -467,7 +467,7 @@ class GenerateQuizService {
     }
 
     // 6. Bash Script: Starts with #!/bin/bash or contains bash keywords
-    if (/^#!/bin\/bash/.test(normalized) || /(while|if|for)\s+.*\s+do/.test(normalized)) {
+    if (/^#!\/bin\/bash/.test(normalized) || /(while|if|for)\s+.*\s+do/.test(normalized)) {
       return this.formatBashScript(normalized);
     }
 
