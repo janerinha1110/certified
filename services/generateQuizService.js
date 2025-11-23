@@ -266,24 +266,57 @@ class GenerateQuizService {
       const questionnaire = quizData.data.quiz_question_answer.questionaire;
       
       // Helper function to process questions for cybersecurity format
-      // CRITICAL: If code_snippet is not empty, extract code_image instead of appending code to question
+      // Rules:
+      // 1. If code_snippet is empty AND markdown is NOT empty → append markdown to question
+      // 2. If markdown is empty AND code_snippet is NOT empty:
+      //    - If code_image is available → use code_image as code_snippet_imageLink (don't append code)
+      //    - If code_image is NOT available → append code_snippet to question
+      // 3. If both are empty → keep question as-is
       const processCybersecurityQuestions = (questionList) => {
         return questionList.map(q => {
           const baseQuestion = q.question || '';
           const snippetRaw = (q.code_snippet || '').trim();
+          const markdownRaw = (q.markdown || '').trim();
           const hasCodeSnippet = snippetRaw !== '';
+          const hasMarkdown = markdownRaw !== '';
           
-          // For cybersecurity: if code_snippet exists, use code_image instead of appending code
-          if (hasCodeSnippet) {
-            // Do NOT append code snippet to question text
-            // Instead, extract code_image and set it as code_snippet_imageLink
-            q.formatted_question = baseQuestion;
-            q.code_snippet_imageLink = q.code_image || null;
-            console.log(`📝 Question ${q.q_id} has code_snippet - using code_image: ${q.code_image || 'null'}`);
-          } else {
-            // No code snippet - handle normally
-            q.formatted_question = baseQuestion;
+          // Handle code_image (check both code_image and codee_image typo)
+          const codeImage = q.code_image || q.codee_image || null;
+          const hasCodeImage = codeImage && codeImage.trim() !== '';
+          
+          // Rule 1: code_snippet is empty AND markdown is NOT empty → append markdown
+          if (!hasCodeSnippet && hasMarkdown) {
+            const normalizedMarkdown = markdownRaw.replace(/\r\n/g, '\n');
+            const markdownBlock = `\`\`\`\n${normalizedMarkdown}\n\`\`\``;
+            q.formatted_question = `${baseQuestion}\n\n${markdownBlock}`.trim();
             q.code_snippet_imageLink = null;
+            console.log(`📝 Question ${q.q_id} has markdown (no code_snippet) - appending markdown to question`);
+          }
+          // Rule 2: markdown is empty AND code_snippet is NOT empty
+          else if (hasCodeSnippet && !hasMarkdown) {
+            if (hasCodeImage) {
+              // code_image is available → use it as code_snippet_imageLink (don't append code)
+              q.formatted_question = baseQuestion;
+              q.code_snippet_imageLink = codeImage;
+              console.log(`📝 Question ${q.q_id} has code_snippet with code_image - using code_image: ${codeImage}`);
+            } else {
+              // code_image is NOT available → append code_snippet to question
+              const normalizedSnippet = snippetRaw.replace(/\r\n/g, '\n');
+              const snippetBlock = `\`\`\`js\n${normalizedSnippet}\n\`\`\``;
+              q.formatted_question = `${baseQuestion}\n\n${snippetBlock}`.trim();
+              q.code_snippet_imageLink = null;
+              console.log(`📝 Question ${q.q_id} has code_snippet without code_image - appending code_snippet to question`);
+            }
+          }
+          // Rule 3: both are empty OR other combinations → keep question as-is
+          else {
+            q.formatted_question = baseQuestion;
+            q.code_snippet_imageLink = hasCodeImage ? codeImage : null;
+            if (hasCodeSnippet && hasMarkdown) {
+              console.log(`📝 Question ${q.q_id} has both code_snippet and markdown - keeping question as-is, code_snippet_imageLink: ${q.code_snippet_imageLink || 'null'}`);
+            } else {
+              console.log(`📝 Question ${q.q_id} has neither code_snippet nor markdown - keeping question as-is`);
+            }
           }
           
           return q;

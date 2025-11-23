@@ -120,27 +120,26 @@ class QuestionService {
     // Format the question with options as requested
     const { formatted_question, option_a, option_b, option_c, option_d } = questionData;
     
-    // Use formatted_question if available (includes code snippets), otherwise fallback to question
+    // Use formatted_question if available (includes code snippets/markdown), otherwise fallback to question
     let questionText = formatted_question || questionData.question || '';
     
     // Check if code_snippet_imageLink exists - if it does, don't append code snippet to question text
     // This is for cybersecurity questions where code is displayed as an image instead
     const hasCodeImage = questionData.code_snippet_imageLink && questionData.code_snippet_imageLink.trim() !== '';
     
-    // Only append code snippets if there's no code_snippet_imageLink (for regular questions)
-    if (!hasCodeImage) {
+    // Check if questionText already contains code blocks (markdown/code_snippet already appended during extraction)
+    const alreadyHasCodeBlock = questionText.includes('```');
+    
+    // Only append code snippets if:
+    // 1. There's no code_snippet_imageLink (for regular questions)
+    // 2. The code snippet wasn't already appended during extraction (check if formatted_question already has code blocks)
+    if (!hasCodeImage && !alreadyHasCodeBlock) {
       // Ensure code snippets are always appended with syntax highlighting
       const snippetRaw = (questionData.code_snippet || '').trim();
       if (snippetRaw) {
         const normalizedSnippet = snippetRaw.replace(/\r\n/g, '\n');
         const snippetBlock = `\`\`\`js\n${normalizedSnippet}\n\`\`\``;
-        if (!questionText.includes(snippetBlock)) {
-          if (questionText.includes('```')) {
-            // Already contains some fenced code; leave as-is
-          } else {
-            questionText = `${questionText}\n\n${snippetBlock}`.trim();
-          }
-        }
+        questionText = `${questionText}\n\n${snippetBlock}`.trim();
       }
     }
     
