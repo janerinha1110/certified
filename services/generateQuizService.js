@@ -330,39 +330,54 @@ class GenerateQuizService {
     }
   }
 
-  // Format process list into readable format
+  // Format process list into readable table with alignment
   formatProcessList(markdownText) {
     try {
-      // First, remove ALL backslashes from the entire string (most aggressive)
-      let cleaned = markdownText.replace(/\\/g, '');
-      
-      // Then handle escaped newlines (in case there are any left)
-      cleaned = cleaned.replace(/\\n/g, '\n');
-      
-      // Split into lines and process each line
-      const rawLines = cleaned.split('\n');
-      const processedLines = rawLines.map(line => {
-        // Remove any remaining backslashes and trim
-        let processed = line.replace(/\\/g, '').trim();
-        return processed;
-      }).filter(line => line.length > 0);
-      
-      if (processedLines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
-      
-      // Find header line
-      const headerIndex = processedLines.findIndex(line => /PID\s+USER/i.test(line));
-      if (headerIndex === -1) return `\`\`\`\n${markdownText}\n\`\`\``;
-      
-      let formatted = '*Process List*\n\n';
-      
-      // Add header
-      formatted += `${processedLines[headerIndex]}\n\n`;
-      
-      // Add process entries
-      for (let i = headerIndex + 1; i < processedLines.length; i++) {
-        formatted += `${processedLines[i]}\n`;
+      // Remove escaped newlines and trim leading/trailing backslashes on each line
+      const cleaned = markdownText.replace(/\\n/g, '\n');
+      const lines = cleaned
+        .split('\n')
+        .map(line => line.replace(/^\\+|\\+$/g, '').trim())
+        .filter(Boolean);
+      if (lines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
+
+      // Locate header row (contains PID + USER)
+      const headerIndex = lines.findIndex(line => /PID\s+USER/i.test(line));
+      if (headerIndex === -1 || headerIndex === lines.length - 1) {
+        return `\`\`\`\n${markdownText}\n\`\`\``;
       }
-      
+
+      const rows = [];
+      for (let i = headerIndex + 1; i < lines.length; i++) {
+        const row = lines[i];
+        const match = row.match(/^(\d+)\s+(\S+)\s+(.*)$/);
+        if (match) {
+          rows.push({
+            pid: match[1],
+            user: match[2],
+            command: match[3].trim()
+          });
+        }
+      }
+
+      if (rows.length === 0) {
+        return `\`\`\`\n${markdownText}\n\`\`\``;
+      }
+
+      const pidWidth = Math.max('PID'.length, ...rows.map(r => r.pid.length));
+      const userWidth = Math.max('USER'.length, ...rows.map(r => r.user.length));
+      const commandHeader = 'COMMAND';
+
+      const header =
+        `${'PID'.padEnd(pidWidth)}  ${'USER'.padEnd(userWidth)}  ${commandHeader}`;
+      const divider =
+        `${'-'.repeat(pidWidth)}  ${'-'.repeat(userWidth)}  ${'-'.repeat(commandHeader.length)}`;
+
+      let formatted = '*Process List*\n\n';
+      formatted += `${header}\n${divider}\n`;
+      rows.forEach(row => {
+        formatted += `${row.pid.padEnd(pidWidth)}  ${row.user.padEnd(userWidth)}  ${row.command}\n`;
+      });
       return formatted.trim();
     } catch (error) {
       console.error('Error formatting process list:', error);
@@ -370,24 +385,63 @@ class GenerateQuizService {
     }
   }
 
-  // Format network traffic table into readable format
+  // Format network traffic details into aligned table
   formatNetworkTraffic(markdownText) {
     try {
-      // Clean up escaped newlines and backslashes
-      let cleaned = markdownText.replace(/\\n/g, '\n').replace(/\\/g, '');
-      const lines = cleaned.split('\n').filter(line => line.trim());
-      if (lines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
-      
-      let formatted = '*Network Traffic*\n\n';
-      
-      // Trim backslashes from start and end of each line
-      lines.forEach(line => {
-        const cleanedLine = line.replace(/^\\+|\\+$/g, '').trim();
-        if (cleanedLine) {
-          formatted += `${cleanedLine}\n`;
+      const cleaned = markdownText.replace(/\\n/g, '\n');
+      const rawLines = cleaned
+        .split('\n')
+        .map(line => line.replace(/^\\+|\\+$/g, '').trim())
+        .filter(Boolean);
+      if (rawLines.length === 0) return `\`\`\`\n${markdownText}\n\`\`\``;
+
+      // Skip leading quotes or headers
+      const lines = rawLines
+        .map(line => line.replace(/^"+|"+$/g, ''))
+        .filter(line => !/^local address/i.test(line) && !/^remote address/i.test(line) && !/^process$/i.test(line));
+
+      const entries = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const parts = line.split(/\s{2,}/).map(p => p.trim()).filter(Boolean);
+
+        if (parts.length >= 2 && /:\d+$/.test(parts[0])) {
+          const local = parts[0];
+          const remote = parts.slice(1).join('  ');
+          let process = '';
+
+          const nextLine = lines[i + 1];
+          if (nextLine && !/:/.test(nextLine)) {
+            process = nextLine.trim();
+            i++; // consume process line
+          }
+
+          entries.push({
+            local,
+            process: process || 'Unknown',
+            remote
+          });
         }
+      }
+
+      if (entries.length === 0) {
+        return `\`\`\`\n${markdownText}\n\`\`\``;
+      }
+
+      const localWidth = Math.max('Local'.length, ...entries.map(e => e.local.length));
+      const processWidth = Math.max('Process'.length, ...entries.map(e => e.process.length));
+      const remoteHeader = 'Remote';
+
+      const header =
+        `${'Local'.padEnd(localWidth)}  ${'Process'.padEnd(processWidth)}  ${remoteHeader}`;
+      const divider =
+        `${'-'.repeat(localWidth)}  ${'-'.repeat(processWidth)}  ${'-'.repeat(remoteHeader.length)}`;
+
+      let formatted = '*Network Traffic*\n\n';
+      formatted += `${header}\n${divider}\n`;
+      entries.forEach(entry => {
+        formatted += `${entry.local.padEnd(localWidth)}  ${entry.process.padEnd(processWidth)}  ${entry.remote}\n`;
       });
-      
       return formatted.trim();
     } catch (error) {
       console.error('Error formatting network traffic:', error);
@@ -401,21 +455,24 @@ class GenerateQuizService {
       // Try to parse and pretty-print JSON
       const jsonObj = JSON.parse(markdownText);
       const prettyJson = JSON.stringify(jsonObj, null, 2);
-      return `*JSON Policy*\n\n\`\`\`json\n${prettyJson}\n\`\`\``;
+      return `*JSON Policy*\n\n${prettyJson}`;
     } catch (error) {
       // If not valid JSON, return as code block
-      return `\`\`\`json\n${markdownText}\n\`\`\``;
+      return markdownText;
     }
   }
 
   // Format bash script into readable format
   formatBashScript(markdownText) {
-    // Clean up: remove backslashes and normalize newlines (in case normalization didn't catch everything)
-    let cleaned = markdownText
-      .replace(/\\/g, '')
-      .replace(/nn/g, '\n')
-      .trim();
-    return `*Bash Script*\n\n\`\`\`bash\n${cleaned}\n\`\`\``;
+    // Clean up: normalize newlines and strip leading/trailing backslashes per line
+    const normalized = markdownText
+      .replace(/\\n/g, '\n')
+      .replace(/nn/g, '\n');
+    const cleanedLines = normalized
+      .split('\n')
+      .map(line => line.replace(/^\\+|\\+$/g, '').trimEnd());
+    const finalScript = cleanedLines.join('\n').trim();
+    return `*Bash Script*\n\n${finalScript}`;
   }
 
   // Format security logs into readable format
@@ -452,7 +509,16 @@ class GenerateQuizService {
 
   // Default formatter (fallback)
   formatDefault(markdownText) {
-    return `\`\`\`\n${markdownText}\n\`\`\``;
+    return markdownText;
+  }
+
+  // Wrap formatted markdown in inline code for WhatsApp display
+  wrapInlineCode(text) {
+    if (!text || text.trim() === '') {
+      return '';
+    }
+    const sanitized = text.replace(/`/g, '\'').trim();
+    return `\`${sanitized}\``;
   }
 
   // Main function to detect content type and format accordingly
@@ -504,7 +570,7 @@ class GenerateQuizService {
     }
 
     // 7. Fallback: Default code block
-    return this.formatDefault(normalized);
+      return this.formatDefault(normalized);
   }
 
   extractQuestionsCybersecurity(quizData) {
@@ -540,7 +606,10 @@ class GenerateQuizService {
           if (!hasCodeSnippet && hasMarkdown) {
             const normalizedMarkdown = markdownRaw.replace(/\r\n/g, '\n');
             const formattedMarkdown = this.formatMarkdownContent(normalizedMarkdown);
-            q.formatted_question = `${baseQuestion}\n\n${formattedMarkdown}`.trim();
+            const inlineMarkdown = this.wrapInlineCode(formattedMarkdown);
+            q.formatted_question = inlineMarkdown
+              ? `${baseQuestion}\n\n${inlineMarkdown}`.trim()
+              : baseQuestion;
             q.code_snippet_imageLink = null;
             console.log(`📝 Question ${q.q_id} has markdown (no code_snippet) - formatting and appending markdown to question`);
           }
