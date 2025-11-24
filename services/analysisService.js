@@ -41,9 +41,27 @@ class AnalysisService {
         status: response.status,
         result: response.data.result,
         message: response.data.message,
-        hasAnalysis: !!response.data.data?.quiz_analysis
+        hasAnalysis: !!response.data.data?.quiz_analysis,
+        status_code: response.data.status_code,
+        detail: response.data.detail
       });
 
+      // Check for error in response body (even if HTTP status is 200)
+      if (response.data.status_code && response.data.status_code !== 200) {
+        const errorDetail = response.data.detail || response.data.message || 'Unknown error';
+        console.error('⚠️ Quiz Analysis API returned error in response body:', {
+          status_code: response.data.status_code,
+          detail: errorDetail
+        });
+        return {
+          success: false,
+          message: errorDetail,
+          data: null,
+          error: `Quiz Analysis API failed with status_code ${response.data.status_code}: ${errorDetail}`
+        };
+      }
+
+      // Check for success result
       if (response.data.result === 'success') {
         return {
           success: true,
@@ -51,8 +69,15 @@ class AnalysisService {
           data: response.data.data
         };
       } else {
-        console.error('Quiz Analysis API returned error:', response.data);
-        throw new Error(`Quiz Analysis API failed: ${response.data.message || 'Unknown error'}`);
+        // If result is not 'success' but no status_code error, treat as failure
+        const errorMessage = response.data.message || response.data.detail || 'Unknown error';
+        console.error('⚠️ Quiz Analysis API returned non-success result:', response.data);
+        return {
+          success: false,
+          message: errorMessage,
+          data: null,
+          error: `Quiz Analysis API failed: ${errorMessage}`
+        };
       }
 
     } catch (error) {
@@ -60,10 +85,22 @@ class AnalysisService {
       if (error.response) {
         console.error('Response status:', error.response.status);
         console.error('Response data:', JSON.stringify(error.response.data, null, 2));
-        const errorMessage = error.response.data?.message || error.response.data?.error || error.message;
-        throw new Error(`Quiz Analysis API failed with status ${error.response.status}: ${errorMessage}`);
+        const errorMessage = error.response.data?.message || error.response.data?.detail || error.response.data?.error || error.message;
+        // Return failure result instead of throwing
+        return {
+          success: false,
+          message: errorMessage,
+          data: null,
+          error: `Quiz Analysis API failed with status ${error.response.status}: ${errorMessage}`
+        };
       }
-      throw new Error(`Quiz Analysis API request failed: ${error.message}`);
+      // Return failure result instead of throwing
+      return {
+        success: false,
+        message: error.message,
+        data: null,
+        error: `Quiz Analysis API request failed: ${error.message}`
+      };
     }
   }
 }

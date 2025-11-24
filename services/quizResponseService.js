@@ -193,20 +193,33 @@ class QuizResponseService {
         console.log('✅ Create V2 Test API completed');
       }
       
-      // Now call quiz analysis API
+      // Now call quiz analysis API (non-blocking - failures won't stop the flow)
       console.log('📊 Calling quiz analysis API...');
       
-      const analysisResult = await analysisService.getQuizAnalysis(
-        certifiedUserSkillId,
-        continueResult.token
-      );
-      
-      if (!analysisResult.success) {
-        console.error('Quiz analysis failed:', analysisResult);
-        // Don't throw error, just log it
+      let analysisResult = { success: false, message: 'Not called', data: null };
+      try {
+        analysisResult = await analysisService.getQuizAnalysis(
+          certifiedUserSkillId,
+          continueResult.token
+        );
+        
+        if (!analysisResult.success) {
+          console.error('⚠️ Quiz analysis failed (non-blocking):', analysisResult.error || analysisResult.message);
+        } else {
+          console.log('✅ Quiz analysis API completed successfully');
+        }
+      } catch (error) {
+        // Catch any unexpected errors and log them, but don't throw
+        console.error('⚠️ Quiz Analysis API threw unexpected error (non-blocking):', error.message);
+        analysisResult = {
+          success: false,
+          message: error.message,
+          data: null,
+          error: `Unexpected error: ${error.message}`
+        };
       }
       
-      console.log('✅ Quiz analysis API completed');
+      console.log('✅ Quiz analysis API call completed (success or failure)');
       
       // Update session as quiz completed and analysis generated (only if analysis was successful)
       const analysisGenerated = analysisResult.success;
@@ -394,20 +407,33 @@ class QuizResponseService {
       // Skip Create V2 Test API
       console.log('⏭️ Skipping Create V2 Test API (not called in v3)');
       
-      // Now call quiz analysis API
+      // Now call quiz analysis API (non-blocking - failures won't stop the flow)
       console.log('📊 Calling quiz analysis API...');
       
-      const analysisResult = await analysisService.getQuizAnalysis(
-        certifiedUserSkillId,
-        existingToken
-      );
-      
-      if (!analysisResult.success) {
-        console.error('Quiz analysis failed:', analysisResult);
-        // Don't throw error, just log it
+      let analysisResult = { success: false, message: 'Not called', data: null };
+      try {
+        analysisResult = await analysisService.getQuizAnalysis(
+          certifiedUserSkillId,
+          existingToken
+        );
+        
+        if (!analysisResult.success) {
+          console.error('⚠️ Quiz analysis failed (non-blocking):', analysisResult.error || analysisResult.message);
+        } else {
+          console.log('✅ Quiz analysis API completed successfully');
+        }
+      } catch (error) {
+        // Catch any unexpected errors and log them, but don't throw
+        console.error('⚠️ Quiz Analysis API threw unexpected error (non-blocking):', error.message);
+        analysisResult = {
+          success: false,
+          message: error.message,
+          data: null,
+          error: `Unexpected error: ${error.message}`
+        };
       }
       
-      console.log('✅ Quiz analysis API completed');
+      console.log('✅ Quiz analysis API call completed (success or failure)');
       
       // Update session as quiz completed and analysis generated (order_id is null)
       const analysisGenerated = analysisResult.success;

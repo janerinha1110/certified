@@ -1,5 +1,13 @@
 const { query } = require('../database');
 
+const DISPLAY_TOTAL_QUESTIONS = 15;
+const PROGRESS_TOP_ROW_LENGTH = 10;
+const PROGRESS_BOTTOM_ROW_LENGTH = 5;
+const COLLAPSED_HEAD_COUNT = 4;
+const COLLAPSED_MIDDLE_COUNT = 5;
+const COLLAPSED_TAIL_LENGTH = DISPLAY_TOTAL_QUESTIONS - (COLLAPSED_HEAD_COUNT + COLLAPSED_MIDDLE_COUNT);
+const PROGRESS_COLLAPSE_TOKEN = '.....';
+
 class QuestionService {
   async createQuestions(questions, sessionId, userId) {
     try {
@@ -122,6 +130,9 @@ class QuestionService {
     
     // Use formatted_question if available (includes code snippets/markdown), otherwise fallback to question
     let questionText = formatted_question || questionData.question || '';
+    const displayQuestionNumber = questionNo <= COLLAPSED_HEAD_COUNT
+      ? questionNo
+      : questionNo + COLLAPSED_MIDDLE_COUNT;
     
     // Check if code_snippet_imageLink exists - if it does, don't append code snippet to question text
     // This is for cybersecurity questions where code is displayed as an image instead
@@ -134,33 +145,57 @@ class QuestionService {
     // 1. There's no code_snippet_imageLink (for regular questions)
     // 2. The code snippet wasn't already appended during extraction (check if formatted_question already has code blocks)
     if (!hasCodeImage && !alreadyHasCodeBlock) {
-      // Ensure code snippets are always appended with syntax highlighting
-      const snippetRaw = (questionData.code_snippet || '').trim();
-      if (snippetRaw) {
-        const normalizedSnippet = snippetRaw.replace(/\r\n/g, '\n');
-        const snippetBlock = `\`\`\`js\n${normalizedSnippet}\n\`\`\``;
-        questionText = `${questionText}\n\n${snippetBlock}`.trim();
+    // Ensure code snippets are always appended with syntax highlighting
+    const snippetRaw = (questionData.code_snippet || '').trim();
+    if (snippetRaw) {
+      const normalizedSnippet = snippetRaw.replace(/\r\n/g, '\n');
+      const snippetBlock = `\`\`\`js\n${normalizedSnippet}\n\`\`\``;
+          questionText = `${questionText}\n\n${snippetBlock}`.trim();
       }
     }
     
-    // Generate progress emojis - green squares for answered, grey squares for pending
-    // For question 1: 🟩⬜⬜⬜⬜⬜⬜⬜⬜⬜ (1 green, 9 grey)
-    // For question 2: 🟩🟩⬜⬜⬜⬜⬜⬜⬜⬜ (2 green, 8 grey)
-    const progressEmojis = '🟩'.repeat(questionNo) + '⬜'.repeat(totalQuestions - questionNo);
-    
-    return `*Question ${questionNo} / ${totalQuestions}*
+    const progressEmojis = this.buildProgressBlock(questionNo);
+    const companyUsedRaw = questionData.company_used || questionData.companyUsed || questionData.company || '';
+    const companyUsed = typeof companyUsedRaw === 'string' ? companyUsedRaw.trim() : '';
 
-${progressEmojis}
+    const sections = [
+      `*Question ${displayQuestionNumber} / ${DISPLAY_TOTAL_QUESTIONS}*`,
+      '',
+      progressEmojis
+    ];
 
-🧠 ${questionText}
+    if (companyUsed) {
+      sections.push('', `_(asked at ${companyUsed})_`);
+    }
 
-A) ${option_a}
+    sections.push(
+      '',
+      `🧠 ${questionText}`,
+      '',
+      `A) ${option_a}`,
+      '',
+      `B) ${option_b}`,
+      '',
+      `C) ${option_c}`,
+      '',
+      `D) ${option_d}`
+    );
 
-B) ${option_b}
+    return sections.join('\n');
+  }
 
-C) ${option_c}
+  buildProgressBlock(questionNo) {
+    if (questionNo <= COLLAPSED_HEAD_COUNT) {
+      const topRow = '🟩'.repeat(questionNo) + '⬜'.repeat(PROGRESS_TOP_ROW_LENGTH - questionNo);
+      const bottomRow = '⬜'.repeat(PROGRESS_BOTTOM_ROW_LENGTH);
+      return `${topRow}\n\n${bottomRow}`;
+    }
 
-D) ${option_d}`;
+    const tailProgress = Math.min(questionNo - COLLAPSED_HEAD_COUNT, COLLAPSED_TAIL_LENGTH);
+    const tailRow = '🟩'.repeat(tailProgress) + '⬜'.repeat(COLLAPSED_TAIL_LENGTH - tailProgress);
+    const headRow = '🟩'.repeat(COLLAPSED_HEAD_COUNT);
+
+    return `${headRow}${PROGRESS_COLLAPSE_TOKEN}${tailRow}`;
   }
 
   async getQuestionsBySession(sessionId) {
