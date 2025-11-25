@@ -2068,9 +2068,11 @@ router.post('/start_quiz_clone_v3', validateStartQuizCloneV3, async (req, res) =
  * - If user+subject not found: runs the normal start_quiz flow
  * - If user exists: uses provided session_id or latest session; if no session, creates one
  * - If session has no questions: tries generate; if generate result has empty arrays, skip storing
- * - Uses extractQuestionsCybersecurity() which handles code_image differently:
- *   - When code_snippet is not empty, extracts code_image and stores in code_snippet_imageLink column
- *   - Does NOT append code snippet to question text (unlike regular extractQuestions)
+ * - Uses extractQuestionsCybersecurity() which:
+ *   - Strictly picks q_id 1-4 (Easy), 11-13 (Medium), 17-19 (Hard) and only falls back to earlier entries if a required q_id is missing so that 10 questions are always stored in order
+ *   - Stores any provided code_image/codee_image URLs in code_snippet_imageLink instead of appending code text
+ *   - When no code image exists but markdown does, appends the markdown content as a monospace block to the question
+ *   - Only appends raw code snippets when neither code image nor markdown is present
  * - Returns same schema as start_quiz_clone_v3, plus question_added: true/false
  * - first_question always includes code_snippet_imageLink (null if empty) and has_code_image (boolean)
  */

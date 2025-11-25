@@ -584,12 +584,7 @@ class GenerateQuizService {
       const questionnaire = quizData.data.quiz_question_answer.questionaire;
       
       // Helper function to process questions for cybersecurity format
-      // Rules:
-      // 1. If code_snippet is empty AND markdown is NOT empty → append markdown to question
-      // 2. If markdown is empty AND code_snippet is NOT empty:
-      //    - If code_image is available → use code_image as code_snippet_imageLink (don't append code)
-      //    - If code_image is NOT available → append code_snippet to question
-      // 3. If both are empty → keep question as-is
+      // Priority: code image > markdown block > raw code snippet
       const processCybersecurityQuestions = (questionList) => {
         return questionList.map(q => {
           const baseQuestion = q.question || '';
@@ -597,51 +592,60 @@ class GenerateQuizService {
           const markdownRaw = (q.markdown || '').trim();
           const hasCodeSnippet = snippetRaw !== '';
           const hasMarkdown = markdownRaw !== '';
-          
-          // Handle code_image (check both code_image and codee_image typo)
           const codeImage = q.code_image || q.codee_image || null;
           const hasCodeImage = codeImage && codeImage.trim() !== '';
-          
-          // Rule 1: code_snippet is empty AND markdown is NOT empty → append markdown
-          if (!hasCodeSnippet && hasMarkdown) {
+
+          if (hasCodeImage) {
+            q.formatted_question = baseQuestion;
+            q.code_snippet_imageLink = codeImage.trim();
+            console.log(`🖼️ Question ${q.q_id} has code image - storing link only`);
+          } else if (hasMarkdown) {
             const normalizedMarkdown = markdownRaw.replace(/\r\n/g, '\n');
             const formattedMarkdown = this.formatMarkdownContent(normalizedMarkdown);
-            const inlineMarkdown = this.wrapInlineCode(formattedMarkdown);
-            q.formatted_question = inlineMarkdown
-              ? `${baseQuestion}\n\n${inlineMarkdown}`.trim()
+            const monospaceBlock = formattedMarkdown
+              ? `\`\`\`\n${formattedMarkdown}\n\`\`\``
+              : '';
+            q.formatted_question = monospaceBlock
+              ? `${baseQuestion}\n\n${monospaceBlock}`.trim()
               : baseQuestion;
             q.code_snippet_imageLink = null;
-            console.log(`📝 Question ${q.q_id} has markdown (no code_snippet) - formatting and appending markdown to question`);
-          }
-          // Rule 2: markdown is empty AND code_snippet is NOT empty
-          else if (hasCodeSnippet && !hasMarkdown) {
-            if (hasCodeImage) {
-              // code_image is available → use it as code_snippet_imageLink (don't append code)
-              q.formatted_question = baseQuestion;
-              q.code_snippet_imageLink = codeImage;
-              console.log(`📝 Question ${q.q_id} has code_snippet with code_image - using code_image: ${codeImage}`);
-            } else {
-              // code_image is NOT available → append code_snippet to question
-              const normalizedSnippet = snippetRaw.replace(/\r\n/g, '\n');
-              const snippetBlock = `\`\`\`js\n${normalizedSnippet}\n\`\`\``;
-              q.formatted_question = `${baseQuestion}\n\n${snippetBlock}`.trim();
-              q.code_snippet_imageLink = null;
-              console.log(`📝 Question ${q.q_id} has code_snippet without code_image - appending code_snippet to question`);
-            }
-          }
-          // Rule 3: both are empty OR other combinations → keep question as-is
-          else {
+            console.log(`📄 Question ${q.q_id} has markdown - appending as monospace block`);
+          } else if (hasCodeSnippet) {
+            const normalizedSnippet = snippetRaw.replace(/\r\n/g, '\n');
+            const snippetBlock = `\`\`\`js\n${normalizedSnippet}\n\`\`\``;
+            q.formatted_question = `${baseQuestion}\n\n${snippetBlock}`.trim();
+            q.code_snippet_imageLink = null;
+            console.log(`📝 Question ${q.q_id} has raw code snippet - embedding in question`);
+          } else {
             q.formatted_question = baseQuestion;
-            q.code_snippet_imageLink = hasCodeImage ? codeImage : null;
-            if (hasCodeSnippet && hasMarkdown) {
-              console.log(`📝 Question ${q.q_id} has both code_snippet and markdown - keeping question as-is, code_snippet_imageLink: ${q.code_snippet_imageLink || 'null'}`);
-            } else {
-              console.log(`📝 Question ${q.q_id} has neither code_snippet nor markdown - keeping question as-is`);
-            }
+            q.code_snippet_imageLink = null;
+            console.log(`ℹ️ Question ${q.q_id} has no extra content - keeping base question`);
           }
-          
+
           return q;
         });
+      };
+
+      const selectQuestionsByIds = (questionList, requiredIds, requiredCount) => {
+        if (!Array.isArray(questionList) || questionList.length === 0) {
+          return [];
+        }
+        const selected = [];
+        const fallbackPool = [];
+        questionList.forEach((q) => {
+          if (requiredIds.includes(q.q_id) && !selected.some(sel => sel.q_id === q.q_id)) {
+            selected.push(q);
+          } else {
+            fallbackPool.push(q);
+          }
+        });
+        for (let i = 0; i < fallbackPool.length && selected.length < requiredCount; i++) {
+          selected.push(fallbackPool[i]);
+        }
+        if (selected.length > requiredCount) {
+          return selected.slice(0, requiredCount);
+        }
+        return selected;
       };
       
       // Collect all available questions
@@ -649,62 +653,35 @@ class GenerateQuizService {
       let allMediumQuestions = [];
       let allHardQuestions = [];
       
-      // Extract easy questions - try specific q_ids first, then fallback to first 4 available
+      // Extract easy questions - strictly target q_id 1-4, fallback to earliest entries if missing
       if (questionnaire.easy && Array.isArray(questionnaire.easy)) {
-        const easyQIds = [1, 2, 3, 4, 5];
-        let easyQuestions = questionnaire.easy.filter(q => easyQIds.includes(q.q_id));
-        
-        // If we don't have 4 questions from specific IDs, take first 4 available
+        const easyQIds = [1, 2, 3, 4];
+        let easyQuestions = selectQuestionsByIds(questionnaire.easy, easyQIds, 4);
         if (easyQuestions.length < 4) {
-          if (questionnaire.easy.length >= 4) {
-            console.log(`⚠️  Only found ${easyQuestions.length} easy questions with q_ids 1-5, using first 4 available instead`);
-            easyQuestions = questionnaire.easy.slice(0, 4);
-          } else if (questionnaire.easy.length > 0) {
-            console.log(`⚠️  Only found ${easyQuestions.length} easy questions with q_ids 1-5, and only ${questionnaire.easy.length} total available. Using all available.`);
-            easyQuestions = questionnaire.easy.slice(0, Math.min(4, questionnaire.easy.length));
-          }
+          console.log(`⚠️  Only found ${easyQuestions.length} easy questions for required q_ids ${easyQIds.join(', ')}. Using available questions to fill the gap.`);
         }
-        
         allEasyQuestions = processCybersecurityQuestions(easyQuestions);
         console.log(`📋 Found ${allEasyQuestions.length} easy questions`);
       }
 
-      // Extract medium questions - try specific q_ids first, then fallback to first 3 available
+      // Extract medium questions - strictly target q_id 11-13, fallback to earliest entries if missing
       if (questionnaire.medium && Array.isArray(questionnaire.medium)) {
         const mediumQIds = [11, 12, 13];
-        let mediumQuestions = questionnaire.medium.filter(q => mediumQIds.includes(q.q_id));
-        
-        // If we don't have 3 questions from specific IDs, take first 3 available
+        let mediumQuestions = selectQuestionsByIds(questionnaire.medium, mediumQIds, 3);
         if (mediumQuestions.length < 3) {
-          if (questionnaire.medium.length >= 3) {
-            console.log(`⚠️  Only found ${mediumQuestions.length} medium questions with q_ids 11-13, using first 3 available instead`);
-            mediumQuestions = questionnaire.medium.slice(0, 3);
-          } else if (questionnaire.medium.length > 0) {
-            console.log(`⚠️  Only found ${mediumQuestions.length} medium questions with q_ids 11-13, and only ${questionnaire.medium.length} total available. Using all available.`);
-            mediumQuestions = questionnaire.medium.slice(0, Math.min(3, questionnaire.medium.length));
-          }
+          console.log(`⚠️  Only found ${mediumQuestions.length} medium questions for required q_ids ${mediumQIds.join(', ')}. Using available questions to fill the gap.`);
         }
-        
         allMediumQuestions = processCybersecurityQuestions(mediumQuestions);
         console.log(`📋 Found ${allMediumQuestions.length} medium questions`);
       }
 
-      // Extract hard questions - try specific q_ids first, then fallback to first 3 available
+      // Extract hard questions - strictly target q_id 17-19, fallback to earliest entries if missing
       if (questionnaire.hard && Array.isArray(questionnaire.hard)) {
-        const hardQIds = [17, 18];
-        let hardQuestions = questionnaire.hard.filter(q => hardQIds.includes(q.q_id));
-        
-        // If we don't have 3 questions from specific IDs, take first 3 available
+        const hardQIds = [17, 18, 19];
+        let hardQuestions = selectQuestionsByIds(questionnaire.hard, hardQIds, 3);
         if (hardQuestions.length < 3) {
-          if (questionnaire.hard.length >= 3) {
-            console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, using first 3 available instead`);
-            hardQuestions = questionnaire.hard.slice(0, 3);
-          } else if (questionnaire.hard.length > 0) {
-            console.log(`⚠️  Only found ${hardQuestions.length} hard questions with q_ids 17-18, and only ${questionnaire.hard.length} total available. Using all available.`);
-            hardQuestions = questionnaire.hard.slice(0, Math.min(3, questionnaire.hard.length));
-          }
+          console.log(`⚠️  Only found ${hardQuestions.length} hard questions for required q_ids ${hardQIds.join(', ')}. Using available questions to fill the gap.`);
         }
-        
         allHardQuestions = processCybersecurityQuestions(hardQuestions);
         console.log(`📋 Found ${allHardQuestions.length} hard questions`);
       }
