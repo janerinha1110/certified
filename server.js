@@ -3,9 +3,11 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const cron = require('node-cron');
 const swaggerSpecs = require('./swagger');
 const config = require('./config');
 const quizRoutes = require('./routes/quiz');
+const reTriggerService = require('./services/reTriggerService');
 
 const app = express();
 
@@ -226,7 +228,27 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
     console.log(`🔗 Health check: http://localhost:${PORT}/health`);
     console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
     console.log(`📖 API Info: http://localhost:${PORT}/`);
+    
+    // Initialize re-trigger cron job
+    // Runs every minute to check for sessions created 5 minutes ago
+    console.log('⏰ Initializing re-trigger cron job (runs every minute)...');
+    cron.schedule('* * * * *', async () => {
+      try {
+        await reTriggerService.checkAndTriggerReTriggerAPI();
+      } catch (error) {
+        console.error('❌ [Re-Trigger Cron] Unhandled error in cron job:', error.message);
+      }
+    }, {
+      scheduled: true,
+      timezone: 'Asia/Kolkata'
+    });
+    console.log('✅ Re-trigger cron job initialized successfully');
   });
+} else {
+  // For Vercel/serverless environments, initialize cron job differently
+  // Note: Vercel serverless functions may not support long-running cron jobs
+  // Consider using Vercel Cron Jobs or external cron service for production
+  console.log('⚠️  Running in Vercel environment - cron jobs may need external scheduling');
 }
 
 module.exports = app;
