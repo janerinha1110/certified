@@ -5006,7 +5006,7 @@ router.post(
  * /api/cron/re-trigger:
  *   get:
  *     summary: Re-trigger API cron endpoint (Vercel Cron Jobs)
- *     description: This endpoint is called by Vercel Cron Jobs every minute to check for sessions created 5 minutes ago where users haven't answered the first question, and calls the external re-trigger API.
+ *     description: This endpoint is called by Vercel Cron Jobs every minute to check for sessions created 5 minutes ago where users haven't answered the first question, and calls the external re-trigger API. Endpoint is deployed and ready for Vercel Cron Jobs.
  *     tags: [System]
  *     responses:
  *       200:
