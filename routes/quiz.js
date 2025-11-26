@@ -5,6 +5,7 @@ const certifiedApiService = require('../services/certifiedApi');
 const generateQuizService = require('../services/generateQuizService');
 const questionService = require('../services/questionService');
 const quizResponseService = require('../services/quizResponseService');
+const reTriggerService = require('../services/reTriggerService');
 const { query } = require('../database');
 const { body, validationResult } = require('express-validator');
 const mixpanelService = require('../utils/mixpanelService');
@@ -4999,5 +5000,71 @@ router.post(
     }
   }
 );
+
+/**
+ * @swagger
+ * /api/cron/re-trigger:
+ *   get:
+ *     summary: Re-trigger API cron endpoint (Vercel Cron Jobs)
+ *     description: This endpoint is called by Vercel Cron Jobs every minute to check for sessions created 5 minutes ago where users haven't answered the first question, and calls the external re-trigger API.
+ *     tags: [System]
+ *     responses:
+ *       200:
+ *         description: Cron job executed successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Re-trigger cron job executed"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     processed:
+ *                       type: integer
+ *                       description: Number of sessions processed
+ *                     triggered:
+ *                       type: integer
+ *                       description: Number of API calls triggered
+ *                     errors:
+ *                       type: integer
+ *                       description: Number of errors encountered
+ *       500:
+ *         description: Internal server error
+ */
+router.get('/cron/re-trigger', async (req, res) => {
+  try {
+    console.log('🕐 [Re-Trigger Cron] Endpoint called by Vercel Cron Jobs');
+    
+    // Verify it's being called by Vercel Cron Jobs (optional security check)
+    // Vercel Cron Jobs send a special header: 'x-vercel-cron'
+    const isVercelCron = req.headers['x-vercel-cron'] === '1';
+    if (!isVercelCron && process.env.NODE_ENV === 'production') {
+      console.warn('⚠️  [Re-Trigger Cron] Request not from Vercel Cron Jobs - may be unauthorized');
+      // Still allow it in case header is not set, but log a warning
+    }
+
+    // Call the re-trigger service
+    const result = await reTriggerService.checkAndTriggerReTriggerAPI();
+
+    res.status(200).json({
+      success: true,
+      message: 'Re-trigger cron job executed',
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ [Re-Trigger Cron] Error in cron endpoint:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to execute re-trigger cron job',
+      error: error.message
+    });
+  }
+});
 
 module.exports = router;

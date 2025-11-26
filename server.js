@@ -220,33 +220,40 @@ app.use((error, req, res, next) => {
 // Start server
 const PORT = process.env.PORT || config.server.port;
 
-// Initialize re-trigger cron job BEFORE server starts
-// This ensures it runs regardless of environment
-// Runs every minute to check for sessions created 5 minutes ago
-console.log('⏰ Initializing re-trigger cron job (runs every minute)...');
-cron.schedule('* * * * *', async () => {
-  try {
-    await reTriggerService.checkAndTriggerReTriggerAPI();
-  } catch (error) {
-    console.error('❌ [Re-Trigger Cron] Unhandled error in cron job:', error.message);
-  }
-}, {
-  scheduled: true,
-  timezone: 'Asia/Kolkata'
-});
-console.log('✅ Re-trigger cron job initialized successfully');
-
-// Test run immediately to verify it works
-console.log('🧪 Running initial test of re-trigger service...');
-reTriggerService.checkAndTriggerReTriggerAPI()
-  .then(result => {
-    console.log('✅ Initial test completed:', result);
-  })
-  .catch(error => {
-    console.error('❌ Initial test failed:', error.message);
+// Initialize re-trigger cron job based on environment
+// For Vercel: Use Vercel Cron Jobs (configured in vercel.json) to call /api/cron/re-trigger
+// For other environments: Use node-cron to run the service directly
+if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
+  // Vercel environment - rely on Vercel Cron Jobs
+  console.log('⏰ Running in Vercel environment - using Vercel Cron Jobs');
+  console.log('📋 Vercel Cron Jobs will call /api/cron/re-trigger every minute');
+} else {
+  // Local/other environments - use node-cron
+  console.log('⏰ Initializing re-trigger cron job with node-cron (runs every minute)...');
+  cron.schedule('* * * * *', async () => {
+    try {
+      await reTriggerService.checkAndTriggerReTriggerAPI();
+    } catch (error) {
+      console.error('❌ [Re-Trigger Cron] Unhandled error in cron job:', error.message);
+    }
+  }, {
+    scheduled: true,
+    timezone: 'Asia/Kolkata'
   });
+  console.log('✅ Re-trigger cron job (node-cron) initialized successfully');
 
-// Only start server if not in Vercel environment
+  // Test run immediately to verify it works (only in non-Vercel environments)
+  console.log('🧪 Running initial test of re-trigger service...');
+  reTriggerService.checkAndTriggerReTriggerAPI()
+    .then(result => {
+      console.log('✅ Initial test completed:', result);
+    })
+    .catch(error => {
+      console.error('❌ Initial test failed:', error.message);
+    });
+}
+
+// Only start HTTP server if not in Vercel environment
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
@@ -257,7 +264,7 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   });
 } else {
   // For Vercel/serverless environments
-  console.log('⚠️  Running in Vercel environment - cron jobs initialized but server may not start');
+  console.log('⚠️  Running in Vercel environment - HTTP server handled by Vercel');
 }
 
 module.exports = app;
