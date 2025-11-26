@@ -220,15 +220,11 @@ app.use((error, req, res, next) => {
 // Start server
 const PORT = process.env.PORT || config.server.port;
 
-// Initialize re-trigger cron job based on environment
-// For Vercel: Use Vercel Cron Jobs (configured in vercel.json) to call /api/cron/re-trigger
-// For other environments: Use node-cron to run the service directly
-if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
-  // Vercel environment - rely on Vercel Cron Jobs
-  console.log('⏰ Running in Vercel environment - using Vercel Cron Jobs');
-  console.log('📋 Vercel Cron Jobs will call /api/cron/re-trigger every minute');
-} else {
-  // Local/other environments - use node-cron
+// Initialize re-trigger cron job for local/development environments
+// For production (Vercel): Use external cron service to call /api/cron/re-trigger endpoint
+// For local/dev: Use node-cron to run the service directly
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  // Local/development environments - use node-cron
   console.log('⏰ Initializing re-trigger cron job with node-cron (runs every minute)...');
   cron.schedule('* * * * *', async () => {
     try {
@@ -242,7 +238,7 @@ if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
   });
   console.log('✅ Re-trigger cron job (node-cron) initialized successfully');
 
-  // Test run immediately to verify it works (only in non-Vercel environments)
+  // Test run immediately to verify it works
   console.log('🧪 Running initial test of re-trigger service...');
   reTriggerService.checkAndTriggerReTriggerAPI()
     .then(result => {
@@ -251,6 +247,11 @@ if (process.env.NODE_ENV === 'production' && process.env.VERCEL) {
     .catch(error => {
       console.error('❌ Initial test failed:', error.message);
     });
+} else {
+  // Production/Vercel environment - endpoint available for external cron services
+  console.log('⏰ Running in production (Vercel) environment');
+  console.log('📋 Re-trigger endpoint available at: /api/cron/re-trigger');
+  console.log('💡 Use external cron service to call this endpoint every minute');
 }
 
 // Only start HTTP server if not in Vercel environment
