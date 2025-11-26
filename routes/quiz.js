@@ -5039,7 +5039,20 @@ router.post(
  */
 router.get('/cron/re-trigger', async (req, res) => {
   try {
-    console.log('🕐 [Re-Trigger Cron] Endpoint called by Vercel Cron Jobs');
+    const timestamp = new Date().toISOString();
+    console.log(`🕐 [Re-Trigger Cron] [${timestamp}] Endpoint called`);
+    
+    // Log request details for debugging
+    console.log('📋 [Re-Trigger Cron] Request details:', {
+      method: req.method,
+      path: req.path,
+      headers: {
+        'x-vercel-cron': req.headers['x-vercel-cron'],
+        'user-agent': req.headers['user-agent']
+      },
+      environment: process.env.NODE_ENV,
+      isVercel: !!process.env.VERCEL
+    });
     
     // Verify it's being called by Vercel Cron Jobs (optional security check)
     // Vercel Cron Jobs send a special header: 'x-vercel-cron'
@@ -5047,6 +5060,8 @@ router.get('/cron/re-trigger', async (req, res) => {
     if (!isVercelCron && process.env.NODE_ENV === 'production') {
       console.warn('⚠️  [Re-Trigger Cron] Request not from Vercel Cron Jobs - may be unauthorized');
       // Still allow it in case header is not set, but log a warning
+    } else if (isVercelCron) {
+      console.log('✅ [Re-Trigger Cron] Confirmed request from Vercel Cron Jobs');
     }
 
     // Call the re-trigger service
