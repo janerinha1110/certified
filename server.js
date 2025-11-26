@@ -220,6 +220,32 @@ app.use((error, req, res, next) => {
 // Start server
 const PORT = process.env.PORT || config.server.port;
 
+// Initialize re-trigger cron job BEFORE server starts
+// This ensures it runs regardless of environment
+// Runs every minute to check for sessions created 5 minutes ago
+console.log('⏰ Initializing re-trigger cron job (runs every minute)...');
+cron.schedule('* * * * *', async () => {
+  try {
+    await reTriggerService.checkAndTriggerReTriggerAPI();
+  } catch (error) {
+    console.error('❌ [Re-Trigger Cron] Unhandled error in cron job:', error.message);
+  }
+}, {
+  scheduled: true,
+  timezone: 'Asia/Kolkata'
+});
+console.log('✅ Re-trigger cron job initialized successfully');
+
+// Test run immediately to verify it works
+console.log('🧪 Running initial test of re-trigger service...');
+reTriggerService.checkAndTriggerReTriggerAPI()
+  .then(result => {
+    console.log('✅ Initial test completed:', result);
+  })
+  .catch(error => {
+    console.error('❌ Initial test failed:', error.message);
+  });
+
 // Only start server if not in Vercel environment
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
   app.listen(PORT, () => {
@@ -228,27 +254,10 @@ if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
     console.log(`🔗 Health check: http://localhost:${PORT}/health`);
     console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
     console.log(`📖 API Info: http://localhost:${PORT}/`);
-    
-    // Initialize re-trigger cron job
-    // Runs every minute to check for sessions created 5 minutes ago
-    console.log('⏰ Initializing re-trigger cron job (runs every minute)...');
-    cron.schedule('* * * * *', async () => {
-      try {
-        await reTriggerService.checkAndTriggerReTriggerAPI();
-      } catch (error) {
-        console.error('❌ [Re-Trigger Cron] Unhandled error in cron job:', error.message);
-      }
-    }, {
-      scheduled: true,
-      timezone: 'Asia/Kolkata'
-    });
-    console.log('✅ Re-trigger cron job initialized successfully');
   });
 } else {
-  // For Vercel/serverless environments, initialize cron job differently
-  // Note: Vercel serverless functions may not support long-running cron jobs
-  // Consider using Vercel Cron Jobs or external cron service for production
-  console.log('⚠️  Running in Vercel environment - cron jobs may need external scheduling');
+  // For Vercel/serverless environments
+  console.log('⚠️  Running in Vercel environment - cron jobs initialized but server may not start');
 }
 
 module.exports = app;
